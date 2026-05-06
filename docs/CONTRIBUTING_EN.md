@@ -88,18 +88,53 @@ Separately, the repository also has a non-blocking `network-smoke` workflow in `
 
 **Running checks locally:**
 
+Start with the bootstrap helper on a fresh checkout:
+
 ```bash
-# Backend gate (recommended)
+# Backend dependencies, flake8, and pytest
+./scripts/dev_bootstrap.sh --backend-only
+
+# Backend plus Web dependencies
+./scripts/dev_bootstrap.sh --with-web
+
+# Backend, Web, and Desktop dependencies
+./scripts/dev_bootstrap.sh --all
+```
+
+`scripts/dev_bootstrap.sh` uses `.venv` by default. Set `DSA_VENV_DIR=/path/to/venv` to override it. If you prefer manual setup, install:
+
+```bash
 pip install -r requirements.txt
 pip install flake8 pytest
-./scripts/ci_gate.sh
+```
 
-# Frontend gate (only if you changed apps/dsa-web/)
+Local validation matrix:
+
+| Scenario | Command | Notes |
+|----------|---------|-------|
+| AI governance | `python scripts/check_ai_assets.py` | Run when changing `AGENTS.md`, Copilot instructions, or `.claude/skills` |
+| Backend syntax | `./scripts/ci_gate.sh syntax` | Fast py_compile check |
+| Backend full gate | `./scripts/ci_gate.sh` | Matches the CI `backend-gate` behavior |
+| Offline pytest | `python -m pytest -m "not network"` | Deterministic tests without live APIs or external network |
+| Web | `cd apps/dsa-web && npm run lint && npm run build` | Run for Web frontend changes |
+| Desktop | `cd apps/dsa-desktop && npm run test` | Run for Desktop changes; packaging changes need extra build validation |
+
+For backend changes, prefer the full gate:
+
+```bash
+./scripts/ci_gate.sh
+```
+
+For Web changes:
+
+```bash
 cd apps/dsa-web
 npm ci
 npm run lint
 npm run build
 ```
+
+Network/API smoke checks are separate from offline checks. Commands such as `python -m pytest -m network` and `./test.sh quick` may call live data providers or third-party APIs, so they are best treated as manual or scheduled observability checks rather than replacements for the deterministic gate. If credentials, network policy, or regional access prevent online smoke validation, say so in the PR.
 
 ### Documentation Sync Rule
 

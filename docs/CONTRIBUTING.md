@@ -29,7 +29,7 @@ source venv/bin/activate  # Linux/Mac
 # venv\Scripts\activate   # Windows
 
 # 安装依赖
-pip install -r requirements.txt
+./scripts/dev_bootstrap.sh --backend-only
 
 # 配置环境变量
 cp .env.example .env
@@ -83,20 +83,55 @@ docs: 更新 README 部署说明
 | web-gate | 前端变更时执行 `npm run lint` + `npm run build` | ✅（触发时） |
 | network-smoke | 定时/手动执行 `pytest -m network` + `test.sh quick`（非阻断） | ❌（观测项） |
 
-**本地运行检查：**
+### 本地开发与验证基线
+
+新 checkout 推荐先运行 bootstrap 脚本准备本地依赖：
 
 ```bash
-# backend gate（推荐）
+# 仅安装后端依赖、flake8 和 pytest
+./scripts/dev_bootstrap.sh --backend-only
+
+# 同时准备后端和 Web 依赖
+./scripts/dev_bootstrap.sh --with-web
+
+# 同时准备后端、Web 和 Desktop 依赖
+./scripts/dev_bootstrap.sh --all
+```
+
+`scripts/dev_bootstrap.sh` 默认使用 `.venv`，如需自定义虚拟环境目录，可设置 `DSA_VENV_DIR=/path/to/venv`。如果你不使用 bootstrap，也可以手动执行：
+
+```bash
 pip install -r requirements.txt
 pip install flake8 pytest
-./scripts/ci_gate.sh
+```
 
-# 前端 gate（如修改了 apps/dsa-web）
+**本地运行检查：**
+
+| 场景 | 命令 | 说明 |
+| --- | --- | --- |
+| AI 协作资产 | `python scripts/check_ai_assets.py` | 修改 `AGENTS.md`、Copilot 指令或 `.claude/skills` 时运行 |
+| 后端语法 | `./scripts/ci_gate.sh syntax` | 快速 py_compile 检查 |
+| 后端完整门禁 | `./scripts/ci_gate.sh` | 与 CI backend-gate 行为一致 |
+| 离线 pytest | `python -m pytest -m "not network"` | 不依赖 live API / 外部网络的确定性测试 |
+| Web | `cd apps/dsa-web && npm run lint && npm run build` | 修改 Web 前端时运行 |
+| Desktop | `cd apps/dsa-desktop && npm run test` | 修改桌面端时运行；打包改动还需补充构建验证 |
+
+后端推荐直接跑完整 gate：
+
+```bash
+./scripts/ci_gate.sh
+```
+
+如修改前端：
+
+```bash
 cd apps/dsa-web
 npm ci
 npm run lint
 npm run build
 ```
+
+网络/API smoke 与离线检查分开处理：`python -m pytest -m network`、`./test.sh quick` 等会访问外部数据源或三方 API，主要用于手动/定时观测，不应替代离线 deterministic gate。若因为网络、凭证或地区限制未执行在线 smoke，请在 PR 中说明。
 
 ## 📋 优先贡献方向
 

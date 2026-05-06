@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 <!-- 新条目格式：- [类型] 描述（类型取值：新功能/改进/修复/文档/测试/chore）-->
 <!-- 每条独立一行追加到本段末尾，无需分类标题，合并时冲突最小 -->
 
+- [修复] 升级 LiteLLM 依赖约束并固定 OpenAI SDK 2.x 范围，避免 Agent 使用 OpenAI-compatible 模型时响应解析异常。
+- [改进] Agent 决策仪表盘新增策略依据字段，并在报告中展示启用、命中、未命中策略与判断摘要。
+
 ## [3.14.1] - 2026-04-26
 
 - [测试] 修正大盘复盘 prompt 测试对“明日交易计划”标题的断言，并同步桌面端版本号，恢复发布 gate。

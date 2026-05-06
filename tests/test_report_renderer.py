@@ -76,6 +76,32 @@ class TestReportRenderer(unittest.TestCase):
         self.assertIsNotNone(out)
         self.assertIn("贵州茅台", out)
 
+    def test_render_strategy_basis(self) -> None:
+        """Markdown and WeChat reports render agent strategy basis."""
+        r = _make_result(
+            dashboard={
+                "core_conclusion": {"one_sentence": "策略确认后观望"},
+                "strategy_basis": {
+                    "active_skills": ["箱体突破策略", "风险优先框架"],
+                    "matched_skills": ["箱体突破策略"],
+                    "rejected_skills": ["放量突破策略"],
+                    "rationale": "价格接近箱体上沿，但量能确认不足。",
+                },
+                "intelligence": {"risk_alerts": []},
+                "battle_plan": {"sniper_points": {"stop_loss": "110"}},
+            }
+        )
+
+        markdown = render("markdown", [r], summary_only=False)
+        wechat = render("wechat", [r], summary_only=False)
+
+        self.assertIsNotNone(markdown)
+        self.assertIsNotNone(wechat)
+        self.assertIn("策略依据", markdown)
+        self.assertIn("启用策略", markdown)
+        self.assertIn("箱体突破策略", markdown)
+        self.assertIn("策略依据", wechat)
+
     def test_render_brief(self) -> None:
         """Brief platform renders 3-5 sentence summary."""
         r = _make_result()

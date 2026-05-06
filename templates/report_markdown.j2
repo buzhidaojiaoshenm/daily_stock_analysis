@@ -18,6 +18,12 @@
 {% set core = dashboard.get('core_conclusion') or {} %}
 {% set battle = dashboard.get('battle_plan') or {} %}
 {% set data_persp = dashboard.get('data_perspective') or {} %}
+{% set strategy_basis_raw = dashboard.get('strategy_basis') %}
+{% set strategy_basis = strategy_basis_raw if strategy_basis_raw is mapping else {} %}
+{% set active_skills = format_strategy_items(strategy_basis.get('active_skills')) if strategy_basis else '' %}
+{% set matched_skills = format_strategy_items(strategy_basis.get('matched_skills')) if strategy_basis else '' %}
+{% set rejected_skills = format_strategy_items(strategy_basis.get('rejected_skills')) if strategy_basis else '' %}
+{% set strategy_rationale = format_strategy_items(strategy_basis.get('rationale')) if strategy_basis else format_strategy_items(strategy_basis_raw) %}
 
 ## {{ e.signal_emoji }} {{ e.stock_name }} ({{ result.code }})
 
@@ -68,6 +74,24 @@
 {% endif %}
 
 {{ market_snapshot(result) }}
+
+{% if active_skills or matched_skills or rejected_skills or strategy_rationale %}
+### 🧭 {{ labels.strategy_basis_heading }}
+
+{% if active_skills %}
+**{{ labels.active_skills_label }}**: {{ active_skills }}
+{% endif %}
+{% if matched_skills %}
+**{{ labels.matched_skills_label }}**: {{ matched_skills }}
+{% endif %}
+{% if rejected_skills %}
+**{{ labels.rejected_skills_label }}**: {{ rejected_skills }}
+{% endif %}
+{% if strategy_rationale %}
+**{{ labels.strategy_rationale_label }}**: {{ strategy_rationale }}
+{% endif %}
+
+{% endif %}
 
 {% if data_persp %}
 ### 📊 {{ labels.data_perspective_heading }}

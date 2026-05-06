@@ -31,10 +31,10 @@ json-repair>=0.55.1         # JSON 修复
 
 # AI 分析
 # Restore official PyPI install after the quarantined 1.82.7 / 1.82.8 builds were removed.
-# Keep the historical minimum version and add a safe upper bound.
-litellm>=1.80.10,<1.82.7   # Unified LLM client (Gemini/Anthropic/OpenAI/DeepSeek etc.)
-tiktoken>=0.8.0,<0.12.0    # BPE tokenizer for LLM token counting (pin <0.12 to avoid plugin registration issues, #537)
-openai>=1.0.0               # OpenAI SDK (transitive dependency of litellm, kept explicit)
+# Keep a bounded version range while using the OpenAI SDK 2.x compatible response parser.
+litellm>=1.83.14,<1.84.0   # Unified LLM client (Gemini/Anthropic/OpenAI/DeepSeek etc.)
+tiktoken>=0.12.0,<0.13.0   # BPE tokenizer for LLM token counting; aligned with LiteLLM 1.83.x
+openai>=2.8.0,<3.0.0        # OpenAI SDK used by LiteLLM's OpenAI-compatible providers
 PyYAML>=6.0                 # YAML parser for LITELLM_CONFIG support
 
 # 搜索引擎（用于获取股票新闻）

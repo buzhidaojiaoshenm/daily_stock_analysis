@@ -45,6 +45,7 @@ env/
 *.swo
 *~
 .cursorrules
+.codex
 
 # 数据和日志
 /data/

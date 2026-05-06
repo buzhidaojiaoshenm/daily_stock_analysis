@@ -14,6 +14,11 @@
 {% set core = dashboard.get('core_conclusion') or {} %}
 {% set battle = dashboard.get('battle_plan') or {} %}
 {% set intel = dashboard.get('intelligence') or {} %}
+{% set strategy_basis_raw = dashboard.get('strategy_basis') %}
+{% set strategy_basis = strategy_basis_raw if strategy_basis_raw is mapping else {} %}
+{% set active_skills = format_strategy_items(strategy_basis.get('active_skills')) if strategy_basis else '' %}
+{% set matched_skills = format_strategy_items(strategy_basis.get('matched_skills')) if strategy_basis else '' %}
+{% set strategy_rationale = format_strategy_items(strategy_basis.get('rationale')) if strategy_basis else format_strategy_items(strategy_basis_raw) %}
 
 ### {{ e.signal_emoji }} **{{ e.signal_text }}** | {{ e.stock_name }}({{ result.code }})
 
@@ -27,6 +32,17 @@
 {% endif %}
 {% if intel.get('sentiment_summary') %}
 💭 {{ labels.sentiment_summary_label }}: {{ intel.sentiment_summary[:50] }}
+{% endif %}
+
+{% if active_skills or matched_skills or strategy_rationale %}
+🧭 **{{ labels.strategy_basis_heading }}**{% if strategy_rationale %}: {{ strategy_rationale[:80] }}{% endif %}
+{% if matched_skills %}
+   • {{ labels.matched_skills_label }}: {{ matched_skills[:70] }}
+{% endif %}
+{% if active_skills %}
+   • {{ labels.active_skills_label }}: {{ active_skills[:70] }}
+{% endif %}
+
 {% endif %}
 
 {% if intel.get('risk_alerts') %}

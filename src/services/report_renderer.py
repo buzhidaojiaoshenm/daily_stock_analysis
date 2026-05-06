@@ -55,6 +55,31 @@ def _clean_sniper_value(val: Any) -> str:
     return s
 
 
+def _format_strategy_items(value: Any) -> str:
+    """Format strategy basis items from model output for report display."""
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, dict):
+        parts = []
+        for key, item in value.items():
+            if item is None:
+                continue
+            item_text = _format_strategy_items(item)
+            if item_text:
+                parts.append(f"{key}: {item_text}")
+        return "、".join(parts)
+    if isinstance(value, (list, tuple, set)):
+        parts = []
+        for item in value:
+            item_text = _format_strategy_items(item)
+            if item_text:
+                parts.append(item_text)
+        return "、".join(parts)
+    return str(value).strip()
+
+
 def _resolve_templates_dir() -> Path:
     """Resolve template directory relative to project root."""
     config = get_config()
@@ -150,6 +175,7 @@ def render(
         "report_language": report_language,
         "escape_md": _escape_md,
         "clean_sniper": _clean_sniper_value,
+        "format_strategy_items": _format_strategy_items,
         "failed_checks": failed_checks,
         "history_by_code": {},
         "localize_operation_advice": localize_operation_advice,

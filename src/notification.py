@@ -758,6 +758,28 @@ class NotificationService(
                 return value[len(prefix):]
         return value
 
+    @staticmethod
+    def _format_strategy_items(value: Any) -> str:
+        """Format strategy basis items from model output for report display."""
+        if value is None:
+            return ""
+        if isinstance(value, str):
+            return value.strip()
+        if isinstance(value, dict):
+            parts = []
+            for key, item in value.items():
+                item_text = NotificationService._format_strategy_items(item)
+                if item_text:
+                    parts.append(f"{key}: {item_text}")
+            return "、".join(parts)
+        if isinstance(value, (list, tuple, set)):
+            parts = [
+                NotificationService._format_strategy_items(item)
+                for item in value
+            ]
+            return "、".join(part for part in parts if part)
+        return str(value).strip()
+
     def _get_signal_level(self, result: AnalysisResult) -> tuple:
         """Get localized signal level and color based on operation advice."""
         return get_signal_level(
@@ -921,6 +943,31 @@ class NotificationService(
                     ])
 
                 self._append_market_snapshot(report_lines, result)
+
+                # ========== 策略依据 ==========
+                strategy_basis_raw = dashboard.get('strategy_basis') if dashboard else None
+                if strategy_basis_raw:
+                    strategy_basis = strategy_basis_raw if isinstance(strategy_basis_raw, dict) else {}
+                    active_skills = self._format_strategy_items(strategy_basis.get('active_skills'))
+                    matched_skills = self._format_strategy_items(strategy_basis.get('matched_skills'))
+                    rejected_skills = self._format_strategy_items(strategy_basis.get('rejected_skills'))
+                    strategy_rationale = self._format_strategy_items(
+                        strategy_basis.get('rationale') if strategy_basis else strategy_basis_raw
+                    )
+                    if active_skills or matched_skills or rejected_skills or strategy_rationale:
+                        report_lines.extend([
+                            f"### 🧭 {labels['strategy_basis_heading']}",
+                            "",
+                        ])
+                        if active_skills:
+                            report_lines.append(f"**{labels['active_skills_label']}**: {active_skills}")
+                        if matched_skills:
+                            report_lines.append(f"**{labels['matched_skills_label']}**: {matched_skills}")
+                        if rejected_skills:
+                            report_lines.append(f"**{labels['rejected_skills_label']}**: {rejected_skills}")
+                        if strategy_rationale:
+                            report_lines.append(f"**{labels['strategy_rationale_label']}**: {strategy_rationale}")
+                        report_lines.append("")
                 
                 # ========== 数据透视 ==========
                 data_persp = dashboard.get('data_perspective', {}) if dashboard else {}
@@ -1158,6 +1205,27 @@ class NotificationService(
                 if info_lines:
                     lines.extend(info_lines)
                     lines.append("")
+
+                # 策略依据
+                strategy_basis_raw = dashboard.get('strategy_basis') if dashboard else None
+                if strategy_basis_raw:
+                    strategy_basis = strategy_basis_raw if isinstance(strategy_basis_raw, dict) else {}
+                    active_skills = self._format_strategy_items(strategy_basis.get('active_skills'))
+                    matched_skills = self._format_strategy_items(strategy_basis.get('matched_skills'))
+                    strategy_rationale = self._format_strategy_items(
+                        strategy_basis.get('rationale') if strategy_basis else strategy_basis_raw
+                    )
+                    if active_skills or matched_skills or strategy_rationale:
+                        heading = f"🧭 **{labels['strategy_basis_heading']}**"
+                        if strategy_rationale:
+                            lines.append(f"{heading}: {strategy_rationale[:80]}")
+                        else:
+                            lines.append(heading)
+                        if matched_skills:
+                            lines.append(f"   • {labels['matched_skills_label']}: {matched_skills[:70]}")
+                        if active_skills:
+                            lines.append(f"   • {labels['active_skills_label']}: {active_skills[:70]}")
+                        lines.append("")
                 
                 # 风险警报（最重要，醒目显示）
                 risks = intel.get('risk_alerts', []) if intel else []

@@ -1052,6 +1052,7 @@ FastAPI 提供 RESTful API 服务，支持配置管理和触发分析。
 | `/api/v1/analysis/status/{task_id}` | GET | 查询任务状态 |
 | `/api/v1/history` | GET | 查询分析历史 |
 | `/api/v1/usage/summary?period=today|month|all` | GET | 按调用类型与模型维度汇总 LLM 调用次数和 Token 用量 |
+| `/api/v1/market-review/run` | POST | 触发大盘复盘并返回 Markdown 报告 |
 | `/api/v1/backtest/run` | POST | 触发回测 |
 | `/api/v1/backtest/results` | GET | 查询回测结果（分页） |
 | `/api/v1/backtest/performance` | GET | 获取整体回测表现 |
@@ -1083,6 +1084,11 @@ curl http://127.0.0.1:8000/api/v1/analysis/status/<task_id>
 
 # 查询今日 LLM 用量
 curl "http://127.0.0.1:8000/api/v1/usage/summary?period=today"
+
+# 触发大盘复盘（region 可选：cn / us / both；默认不发送通知）
+curl -X POST http://127.0.0.1:8000/api/v1/market-review/run \
+  -H 'Content-Type: application/json' \
+  -d '{"region": "cn", "send_notification": false}'
 
 # 触发回测（全部股票）
 curl -X POST http://127.0.0.1:8000/api/v1/backtest/run \

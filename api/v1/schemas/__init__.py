@@ -91,6 +91,10 @@ from api.v1.schemas.portfolio import (
     PortfolioFxRefreshResponse,
     PortfolioRiskResponse,
 )
+from api.v1.schemas.market_review import (
+    MarketReviewRunRequest,
+    MarketReviewRunResponse,
+)
 
 __all__ = [
     # common

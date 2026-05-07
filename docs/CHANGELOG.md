@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [改进] Agent 决策仪表盘新增策略依据字段，并在报告中展示启用、命中、未命中策略与判断摘要。
 - [改进] 新增本地开发 bootstrap 脚本，并让 backend gate 在缺少 flake8 或 pytest 时输出明确安装指引。
 - [改进] 定时任务新增 `SCHEDULE_TIMEZONE` 显式时区配置，避免 Docker 或跨时区部署时依赖宿主机本地时区。
+- [新功能] 新增 `POST /api/v1/market-review/run`，支持通过 FastAPI 触发 A 股、美股或双市场大盘复盘并返回 Markdown 报告。
 - [文档] 补充本地验证矩阵，明确后端、Web、桌面端、AI governance 以及离线检查和网络 smoke 的边界。
 - [测试] 修正 `test_env.py` 通知测试对企业微信渠道的判断，避免其他通知渠道已配置时误读空 Webhook。
 

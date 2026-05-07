@@ -317,14 +317,14 @@ def test_notification():
     """测试通知推送"""
     print_header("5. 通知推送测试")
     
-    from src.notification import NotificationService
+    from src.notification import NotificationChannel, NotificationService
     from src.config import get_config
     
     config = get_config()
     service = NotificationService()
     
     print_section("配置检查")
-    if service.is_available():
+    if NotificationChannel.WECHAT in service.get_available_channels():
         print(f"  ✓ 企业微信 Webhook 已配置")
         webhook_preview = config.wechat_webhook_url[:50] + "..." if len(config.wechat_webhook_url) > 50 else config.wechat_webhook_url
         print(f"    URL: {webhook_preview}")

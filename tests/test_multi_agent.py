@@ -1086,6 +1086,25 @@ class TestBaseAgentMessageAssembly(unittest.TestCase):
         self.assertEqual(messages[2], {"role": "assistant", "content": "old answer"})
         self.assertEqual(messages[-1], {"role": "user", "content": "current turn"})
 
+    def test_build_messages_compacts_oversized_conversation_history(self):
+        agent = self._make_agent()
+        ctx = AgentContext(query="hello")
+        ctx.meta["conversation_history"] = [
+            {"role": "user", "content": "old " + ("x" * 4000)},
+            {"role": "assistant", "content": "middle " + ("y" * 4000)},
+            {"role": "user", "content": "recent question"},
+            {"role": "assistant", "content": "recent answer"},
+        ]
+
+        messages = agent._build_messages(ctx)
+        history_messages = messages[1:-1]
+
+        self.assertEqual(history_messages[0]["role"], "system")
+        self.assertIn("Earlier conversation history was omitted", history_messages[0]["content"])
+        self.assertIn({"role": "user", "content": "recent question"}, history_messages)
+        self.assertIn({"role": "assistant", "content": "recent answer"}, history_messages)
+        self.assertNotIn("x" * 4000, [message["content"] for message in history_messages])
+
 
 # ============================================================
 # EventMonitor serialization

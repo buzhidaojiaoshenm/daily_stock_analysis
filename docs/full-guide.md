@@ -1170,6 +1170,7 @@ A: 检查是否启用了 Actions，以及 cron 表达式是否正确（注意是
 - 缓存缺失或过期时，工具仍会按原逻辑从数据源获取日线数据；获取成功后会 best-effort 写回 `stock_daily`，保存失败不会阻断 Agent 回复。
 - `search_stock_news` 与 `search_comprehensive_intel` 成功返回后会 best-effort 写入 `news_intel`，复用现有 URL / fallback key 去重逻辑。
 - `get_realtime_quote` 不复用 `stock_daily` 作为实时行情缓存，也不会把盘中实时行情写入日线表；如需实时行情缓存，应单独设计实时行情存储。
+- 多轮聊天会按近似 token 预算压缩历史：优先保留最近消息，超长单条会被截断，过旧消息会被省略，并通过一条 system 摘要说明省略/截断数量，避免长会话把 Agent 上下文撑爆。
 
 ## 持仓管理说明
 

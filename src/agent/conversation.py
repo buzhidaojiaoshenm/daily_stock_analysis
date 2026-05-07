@@ -15,6 +15,98 @@ from src.storage import get_db
 
 logger = logging.getLogger(__name__)
 
+_APPROX_CHARS_PER_TOKEN = 4
+DEFAULT_HISTORY_TOKEN_BUDGET = 800
+DEFAULT_HISTORY_MESSAGE_TOKEN_BUDGET = 500
+
+
+def _estimate_tokens(text: str) -> int:
+    return max(1, (len(text) + _APPROX_CHARS_PER_TOKEN - 1) // _APPROX_CHARS_PER_TOKEN)
+
+
+def _truncate_to_token_budget(text: str, max_tokens: int) -> tuple[str, bool]:
+    max_chars = max(1, max_tokens * _APPROX_CHARS_PER_TOKEN)
+    if len(text) <= max_chars:
+        return text, False
+    return text[:max_chars].rstrip() + "\n...(truncated to fit conversation history budget)", True
+
+
+def compact_conversation_history(
+    messages: List[Dict[str, Any]],
+    *,
+    max_tokens: int = DEFAULT_HISTORY_TOKEN_BUDGET,
+    per_message_tokens: int = DEFAULT_HISTORY_MESSAGE_TOKEN_BUDGET,
+) -> List[Dict[str, str]]:
+    """Keep recent conversation history within an approximate token budget.
+
+    This is deterministic and local: it avoids another LLM call just to build
+    context, while still making omitted history explicit to downstream agents.
+    """
+    valid_messages: List[Dict[str, str]] = []
+    for message in messages:
+        if not isinstance(message, dict):
+            continue
+        role = message.get("role")
+        content = message.get("content")
+        if role in {"user", "assistant", "system"} and isinstance(content, str) and content:
+            valid_messages.append({"role": role, "content": content})
+
+    compacted_reversed: List[Dict[str, str]] = []
+    used_tokens = 0
+    omitted_messages = 0
+    omitted_tokens = 0
+    truncated_messages = 0
+
+    for message in reversed(valid_messages):
+        original_content = message["content"]
+        content, truncated = _truncate_to_token_budget(original_content, per_message_tokens)
+        tokens = _estimate_tokens(content)
+        original_tokens = _estimate_tokens(original_content)
+
+        if compacted_reversed and used_tokens + tokens > max_tokens:
+            omitted_messages += 1
+            omitted_tokens += original_tokens
+            continue
+
+        if not compacted_reversed and tokens > max_tokens:
+            content, truncated = _truncate_to_token_budget(original_content, max_tokens)
+            tokens = _estimate_tokens(content)
+
+        if truncated:
+            truncated_messages += 1
+
+        compacted_reversed.append({"role": message["role"], "content": content})
+        used_tokens += tokens
+
+    compacted = list(reversed(compacted_reversed))
+    if omitted_messages:
+        compacted.insert(
+            0,
+            {
+                "role": "system",
+                "content": (
+                    "Earlier conversation history was omitted to fit the context budget. "
+                    f"omitted_messages={omitted_messages}, "
+                    f"approx_omitted_tokens={omitted_tokens}, "
+                    f"truncated_messages={truncated_messages}."
+                ),
+            },
+        )
+    elif truncated_messages:
+        compacted.insert(
+            0,
+            {
+                "role": "system",
+                "content": (
+                    "Some conversation messages were truncated to fit the context budget. "
+                    f"truncated_messages={truncated_messages}."
+                ),
+            },
+        )
+
+    return compacted
+
+
 @dataclass
 class ConversationSession:
     """A single multi-turn conversation session."""
@@ -36,7 +128,7 @@ class ConversationSession:
     def get_history(self) -> List[Dict[str, Any]]:
         """Get message history."""
         messages = get_db().get_conversation_history(self.session_id)
-        return messages
+        return compact_conversation_history(messages)
 
 class ConversationManager:
     """Manages multiple conversation sessions with TTL."""

@@ -161,13 +161,9 @@ class BaseAgent(ABC):
 
         history = ctx.meta.get("conversation_history")
         if isinstance(history, list):
-            for message in history:
-                if not isinstance(message, dict):
-                    continue
-                role = message.get("role")
-                content = message.get("content")
-                if role in {"user", "assistant", "system"} and isinstance(content, str) and content:
-                    messages.append({"role": role, "content": content})
+            from src.agent.conversation import compact_conversation_history
+
+            messages.extend(compact_conversation_history(history))
 
         # Inject pre-fetched data as a synthetic assistant context
         cached_data = self._inject_cached_data(ctx)

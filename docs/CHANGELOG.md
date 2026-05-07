@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [新功能] WebUI 新增“大盘复盘”页面，可选择 A 股、美股或双市场复盘并在页面内查看 Markdown 报告。
 - [改进] 统一代理配置说明与系统设置 schema，补齐 `HTTPS_PROXY`、`NO_PROXY` 及本地代理快捷开关，并兼容小写代理环境变量。
 - [改进] 明确历史详情、新闻和 Markdown 接口以 `record_id` 为正式唯一入口，保留非数字 `query_id` 最新记录兼容查询语义。
+- [改进] Agent 多轮对话历史新增近似 token 预算压缩，保留最近上下文并显式标注被省略或截断的旧消息。
 - [文档] 补充本地验证矩阵，明确后端、Web、桌面端、AI governance 以及离线检查和网络 smoke 的边界。
 - [测试] 修正 `test_env.py` 通知测试对企业微信渠道的判断，避免其他通知渠道已配置时误读空 Webhook。
 

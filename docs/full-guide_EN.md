@@ -856,7 +856,7 @@ Backtesting triggers automatically after the daily analysis flow completes (non-
 
 ## Local WebUI Management Interface
 
-The WebUI and FastAPI API share the same service process. After startup, use the browser workspace for configuration management, manual analysis, task progress, historical reports, backtesting, portfolio management, and smart import. Authentication, cloud-server access, and API usage details are covered below.
+The WebUI and FastAPI API share the same service process. After startup, use the browser workspace for configuration management, manual analysis, market review, task progress, historical reports, backtesting, portfolio management, and smart import. Authentication, cloud-server access, and API usage details are covered below.
 
 ### FastAPI API Service
 
@@ -873,6 +873,7 @@ FastAPI provides RESTful API service for configuration management and triggering
 
 - **Configuration Management** - View/modify watchlist
 - **Quick Analysis** - Trigger analysis via API
+- **Market Review** - Trigger CN, US, or combined market review from the WebUI and view the Markdown report in place
 - **Real-time Progress** - Analysis task status updates in real-time, supports parallel tasks; the regular stock-analysis path now prefers LiteLLM streaming during the LLM stage and pushes finer-grained `message/progress` updates through task SSE
 - **Backtest Validation** - Evaluate historical analysis accuracy, query direction win rate and simulated returns
 - **API Documentation** - Visit `/docs` for Swagger UI

@@ -12,13 +12,15 @@ class _FakeJob:
         self._schedule_module = schedule_module
         self.next_run = datetime(2026, 1, 1, 18, 0, 0)
         self.at_time = None
+        self.at_timezone = None
 
     @property
     def day(self):
         return self
 
-    def at(self, value):
+    def at(self, value, tz=None):
         self.at_time = value
+        self.at_timezone = tz
         hour, minute = [int(part) for part in value.split(":")]
         self.next_run = datetime(2026, 1, 1, hour, minute, 0)
         return self
@@ -88,8 +90,14 @@ class SchedulerBackgroundTaskTestCase(unittest.TestCase):
             order = []
 
             class FakeScheduler:
-                def __init__(self, schedule_time="18:00", schedule_time_provider=None):
+                def __init__(
+                    self,
+                    schedule_time="18:00",
+                    schedule_timezone="Asia/Shanghai",
+                    schedule_time_provider=None,
+                ):
                     order.append(("init", schedule_time))
+                    order.append(("timezone", schedule_timezone))
                     order.append(("provider", callable(schedule_time_provider)))
 
                 def add_background_task(self, **kwargs):
@@ -113,7 +121,16 @@ class SchedulerBackgroundTaskTestCase(unittest.TestCase):
                     }],
                 )
 
-        self.assertEqual(order[:4], [("init", "18:00"), ("provider", False), ("background", "event_monitor"), ("daily", True)])
+        self.assertEqual(
+            order[:5],
+            [
+                ("init", "18:00"),
+                ("timezone", "Asia/Shanghai"),
+                ("provider", False),
+                ("background", "event_monitor"),
+                ("daily", True),
+            ],
+        )
 
     def test_scheduler_reloads_daily_job_when_schedule_time_changes(self):
         fake_schedule = _FakeScheduleModule()
@@ -134,6 +151,19 @@ class SchedulerBackgroundTaskTestCase(unittest.TestCase):
         self.assertEqual(len(fake_schedule.jobs), 1)
         self.assertEqual(fake_schedule.jobs[0].at_time, "09:30")
         self.assertEqual(scheduler.schedule_time, "09:30")
+
+    def test_scheduler_registers_daily_job_with_explicit_timezone(self):
+        fake_schedule = _FakeScheduleModule()
+        with patch.dict(sys.modules, {"schedule": fake_schedule}):
+            from src.scheduler import Scheduler
+
+            scheduler = Scheduler(schedule_time="18:00", schedule_timezone="Asia/Shanghai")
+            scheduler.set_daily_task(lambda: None, run_immediately=False)
+
+        self.assertEqual(len(fake_schedule.jobs), 1)
+        self.assertEqual(fake_schedule.jobs[0].at_time, "18:00")
+        self.assertEqual(fake_schedule.jobs[0].at_timezone, "Asia/Shanghai")
+        self.assertEqual(scheduler.schedule_timezone, "Asia/Shanghai")
 
     def test_scheduler_keeps_existing_daily_job_when_schedule_time_invalid(self):
         fake_schedule = _FakeScheduleModule()

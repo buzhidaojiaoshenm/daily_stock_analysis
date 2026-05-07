@@ -193,7 +193,8 @@ journalctl -u stock-analyzer -f
 | Config Item | Default | Description |
 |--------|--------|------|
 | `SCHEDULE_ENABLED` | `false` | Enable scheduled tasks |
-| `SCHEDULE_TIME` | `18:00` | Daily execution time |
+| `SCHEDULE_TIME` | `18:00` | Daily execution time, interpreted in `SCHEDULE_TIMEZONE` |
+| `SCHEDULE_TIMEZONE` | `Asia/Shanghai` | Scheduled task timezone (IANA name) |
 | `MARKET_REVIEW_ENABLED` | `true` | Enable market review |
 | `TAVILY_API_KEYS` | - | News search (optional) |
 | `MINIMAX_API_KEYS` | - | MiniMax search (optional) |

@@ -86,6 +86,7 @@ class MainScheduleModeTestCase(unittest.TestCase):
             "feishu_stream_enabled": False,
             "schedule_enabled": False,
             "schedule_time": "18:00",
+            "schedule_timezone": "Asia/Shanghai",
             "schedule_run_immediately": True,
             "run_immediately": True,
         }
@@ -100,11 +101,13 @@ class MainScheduleModeTestCase(unittest.TestCase):
         def fake_run_with_schedule(
             task,
             schedule_time,
+            schedule_timezone,
             run_immediately,
             background_tasks=None,
             schedule_time_provider=None,
         ):
             scheduled_call["schedule_time"] = schedule_time
+            scheduled_call["schedule_timezone"] = schedule_timezone
             scheduled_call["run_immediately"] = run_immediately
             scheduled_call["background_tasks"] = background_tasks or []
             scheduled_call["resolved_schedule_time"] = (
@@ -127,6 +130,7 @@ class MainScheduleModeTestCase(unittest.TestCase):
             scheduled_call,
             {
                 "schedule_time": "18:00",
+                "schedule_timezone": "Asia/Shanghai",
                 "run_immediately": True,
                 "background_tasks": [],
                 "resolved_schedule_time": "18:00",
@@ -146,11 +150,13 @@ class MainScheduleModeTestCase(unittest.TestCase):
         def fake_run_with_schedule(
             task,
             schedule_time,
+            schedule_timezone,
             run_immediately,
             background_tasks=None,
             schedule_time_provider=None,
         ):
             scheduled_call["schedule_time"] = schedule_time
+            scheduled_call["schedule_timezone"] = schedule_timezone
             scheduled_call["resolved_schedule_time"] = (
                 schedule_time_provider() if schedule_time_provider is not None else None
             )
@@ -168,7 +174,11 @@ class MainScheduleModeTestCase(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertEqual(
             scheduled_call,
-            {"schedule_time": "18:00", "resolved_schedule_time": "09:30"},
+            {
+                "schedule_time": "18:00",
+                "schedule_timezone": "Asia/Shanghai",
+                "resolved_schedule_time": "09:30",
+            },
         )
         run_full_analysis.assert_called_once_with(runtime_config, args, None)
 

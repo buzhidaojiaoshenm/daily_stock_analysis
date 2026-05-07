@@ -150,6 +150,40 @@ class ConfigEnvCompatibilityTestCase(unittest.TestCase):
 
         self.assertEqual(config.schedule_time, "18:00")
 
+    @patch.object(Config, "_parse_litellm_yaml", return_value=[])
+    def test_schedule_timezone_can_be_configured(
+        self,
+        _mock_parse_yaml,
+    ) -> None:
+        env = {
+            "SCHEDULE_TIMEZONE": "America/New_York",
+        }
+
+        with patch.dict(os.environ, env, clear=True):
+            config = Config._load_from_env()
+
+        self.assertEqual(config.schedule_timezone, "America/New_York")
+
+    @patch.object(Config, "_parse_litellm_yaml", return_value=[])
+    def test_blank_schedule_timezone_falls_back_to_default(
+        self,
+        _mock_parse_yaml,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            env_path = Path(temp_dir) / ".env"
+            env_path.write_text("SCHEDULE_TIMEZONE=\n", encoding="utf-8")
+
+            with patch.dict(
+                os.environ,
+                {
+                    "ENV_FILE": str(env_path),
+                },
+                clear=True,
+            ):
+                config = Config._load_from_env()
+
+        self.assertEqual(config.schedule_timezone, "Asia/Shanghai")
+
     @patch("src.config.setup_env")
     @patch.object(Config, "_parse_litellm_yaml", return_value=[])
     def test_report_language_prefers_preexisting_process_env_over_env_file(

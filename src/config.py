@@ -17,6 +17,7 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple
 from urllib.parse import urlparse
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from dotenv import load_dotenv, dotenv_values
 from dataclasses import dataclass, field
 
@@ -71,6 +72,7 @@ NEWS_STRATEGY_WINDOWS: Dict[str, int] = {
     "medium": 7,
     "long": 30,
 }
+DEFAULT_SCHEDULE_TIMEZONE = "Asia/Shanghai"
 
 
 def parse_env_bool(value: Optional[str], default: bool = False) -> bool:
@@ -81,6 +83,24 @@ def parse_env_bool(value: Optional[str], default: bool = False) -> bool:
     if not normalized:
         return default
     return normalized not in _FALSEY_ENV_VALUES
+
+
+def parse_schedule_timezone(value: Optional[str]) -> str:
+    """Parse an IANA timezone for the built-in scheduler."""
+    candidate = (value or "").strip()
+    if not candidate:
+        return DEFAULT_SCHEDULE_TIMEZONE
+
+    try:
+        ZoneInfo(candidate)
+    except ZoneInfoNotFoundError:
+        logger.warning(
+            "SCHEDULE_TIMEZONE=%r 不是有效的 IANA 时区，已回退到 %s",
+            candidate,
+            DEFAULT_SCHEDULE_TIMEZONE,
+        )
+        return DEFAULT_SCHEDULE_TIMEZONE
+    return candidate
 
 
 def parse_env_int(
@@ -816,6 +836,7 @@ class Config:
     # === 定时任务配置 ===
     schedule_enabled: bool = False            # 是否启用定时任务
     schedule_time: str = "18:00"              # 每日推送时间（HH:MM 格式）
+    schedule_timezone: str = DEFAULT_SCHEDULE_TIMEZONE  # 定时任务时区（IANA）
     schedule_run_immediately: bool = True     # 启动时是否立即执行一次
     run_immediately: bool = True              # 启动时是否立即执行一次（非定时模式）
     market_review_enabled: bool = True        # 是否启用大盘复盘
@@ -929,6 +950,7 @@ class Config:
             "RUN_IMMEDIATELY",
             "SCHEDULE_ENABLED",
             "SCHEDULE_TIME",
+            "SCHEDULE_TIMEZONE",
             "SCHEDULE_RUN_IMMEDIATELY",
         }
     )
@@ -1493,6 +1515,13 @@ class Config:
                 prefer_env_file=True,
             ).lower() == 'true',
             schedule_time=(schedule_time_value or '18:00').strip() or '18:00',
+            schedule_timezone=parse_schedule_timezone(
+                cls._resolve_env_value(
+                    'SCHEDULE_TIMEZONE',
+                    default=DEFAULT_SCHEDULE_TIMEZONE,
+                    prefer_env_file=True,
+                )
+            ),
             schedule_run_immediately=schedule_run_immediately,
             run_immediately=legacy_run_immediately,
             market_review_enabled=os.getenv('MARKET_REVIEW_ENABLED', 'true').lower() == 'true',

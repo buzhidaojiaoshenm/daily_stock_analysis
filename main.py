@@ -882,7 +882,11 @@ def main() -> int:
         # 模式2: 定时任务模式
         if args.schedule or config.schedule_enabled:
             logger.info("模式: 定时任务")
-            logger.info(f"每日执行时间: {config.schedule_time}")
+            logger.info(
+                "每日执行时间: %s %s",
+                config.schedule_time,
+                getattr(config, "schedule_timezone", "Asia/Shanghai"),
+            )
 
             # Determine whether to run immediately:
             # Command line arg --no-run-immediately overrides config if present.
@@ -926,6 +930,7 @@ def main() -> int:
             run_with_schedule(
                 task=scheduled_task,
                 schedule_time=config.schedule_time,
+                schedule_timezone=getattr(config, "schedule_timezone", "Asia/Shanghai"),
                 run_immediately=should_run_immediately,
                 background_tasks=background_tasks,
                 schedule_time_provider=schedule_time_provider,

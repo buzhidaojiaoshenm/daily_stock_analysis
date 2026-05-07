@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [修复] 升级 LiteLLM 依赖约束并固定 OpenAI SDK 2.x 范围，避免 Agent 使用 OpenAI-compatible 模型时响应解析异常。
 - [改进] Agent 决策仪表盘新增策略依据字段，并在报告中展示启用、命中、未命中策略与判断摘要。
 - [改进] 新增本地开发 bootstrap 脚本，并让 backend gate 在缺少 flake8 或 pytest 时输出明确安装指引。
+- [改进] 定时任务新增 `SCHEDULE_TIMEZONE` 显式时区配置，避免 Docker 或跨时区部署时依赖宿主机本地时区。
 - [文档] 补充本地验证矩阵，明确后端、Web、桌面端、AI governance 以及离线检查和网络 smoke 的边界。
 - [测试] 修正 `test_env.py` 通知测试对企业微信渠道的判断，避免其他通知渠道已配置时误读空 Webhook。
 

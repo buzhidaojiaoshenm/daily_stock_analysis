@@ -634,6 +634,7 @@ class SystemConfigService:
         startup_only_schedule_keys = submitted_keys & {
             "SCHEDULE_ENABLED",
             "SCHEDULE_TIME",
+            "SCHEDULE_TIMEZONE",
             "SCHEDULE_RUN_IMMEDIATELY",
         }
         if startup_only_schedule_keys:

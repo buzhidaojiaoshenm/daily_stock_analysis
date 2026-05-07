@@ -20,6 +20,7 @@ import threading
 import time
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +67,7 @@ class Scheduler:
     def __init__(
         self,
         schedule_time: str = "18:00",
+        schedule_timezone: str = "Asia/Shanghai",
         schedule_time_provider: Optional[Callable[[], str]] = None,
     ):
         """
@@ -73,6 +75,7 @@ class Scheduler:
 
         Args:
             schedule_time: 每日执行时间，格式 "HH:MM"
+            schedule_timezone: 每日执行时间所属 IANA 时区
         """
         try:
             import schedule
@@ -82,6 +85,7 @@ class Scheduler:
             raise ImportError("请安装 schedule 库: pip install schedule")
 
         self.schedule_time = schedule_time
+        self.schedule_timezone = self._normalize_schedule_timezone(schedule_timezone)
         self._schedule_time_provider = schedule_time_provider
         self.shutdown_handler = GracefulShutdown()
         self._task_callback: Optional[Callable] = None
@@ -113,6 +117,16 @@ class Scheduler:
             return False
         return True
 
+    @staticmethod
+    def _normalize_schedule_timezone(schedule_timezone: str) -> str:
+        """Validate and normalize IANA timezone names used by schedule.Job.at."""
+        candidate = (schedule_timezone or "").strip() or "Asia/Shanghai"
+        try:
+            ZoneInfo(candidate)
+        except ZoneInfoNotFoundError as exc:
+            raise ValueError(f"无效的定时任务时区: {schedule_timezone!r}") from exc
+        return candidate
+
     def _cancel_daily_job(self) -> None:
         """Remove the currently registered daily job if one exists."""
         if self._daily_job is None:
@@ -140,11 +154,18 @@ class Scheduler:
 
         previous_time = self.schedule_time
         self._cancel_daily_job()
-        self._daily_job = self.schedule.every().day.at(candidate).do(self._safe_run_task)
+        self._daily_job = self.schedule.every().day.at(
+            candidate,
+            self.schedule_timezone,
+        ).do(self._safe_run_task)
         self.schedule_time = candidate
 
         if previous_time == candidate:
-            logger.info("已设置每日定时任务，执行时间: %s", self.schedule_time)
+            logger.info(
+                "已设置每日定时任务，执行时间: %s %s",
+                self.schedule_time,
+                self.schedule_timezone,
+            )
         else:
             logger.info(
                 "检测到 SCHEDULE_TIME 变更，已将每日定时任务从 %s 更新为 %s",
@@ -308,6 +329,7 @@ class Scheduler:
 def run_with_schedule(
     task: Callable,
     schedule_time: str = "18:00",
+    schedule_timezone: str = "Asia/Shanghai",
     run_immediately: bool = True,
     background_tasks: Optional[List[Dict[str, Any]]] = None,
     schedule_time_provider: Optional[Callable[[], str]] = None,
@@ -318,6 +340,7 @@ def run_with_schedule(
     Args:
         task: 要执行的任务函数
         schedule_time: 每日执行时间
+        schedule_timezone: 每日执行时间所属 IANA 时区
         run_immediately: 是否立即执行一次
         background_tasks: 可选的后台任务定义列表。每项为一个字典，
             需包含 `task` 与 `interval_seconds`，可选包含 `name`
@@ -327,6 +350,7 @@ def run_with_schedule(
     """
     scheduler = Scheduler(
         schedule_time=schedule_time,
+        schedule_timezone=schedule_timezone,
         schedule_time_provider=schedule_time_provider,
     )
     for entry in background_tasks or []:

@@ -222,17 +222,19 @@ journalctl -u stock-analyzer -f
 编辑 `docker-compose.yml`：
 ```yaml
 environment:
-  - http_proxy=http://your-proxy:port
-  - https_proxy=http://your-proxy:port
+  - HTTP_PROXY=http://your-proxy:port
+  - HTTPS_PROXY=http://your-proxy:port
 ```
 
 ### 直接部署方式
 
-编辑 `main.py` 顶部：
-```python
-os.environ["http_proxy"] = "http://your-proxy:port"
-os.environ["https_proxy"] = "http://your-proxy:port"
+在 `.env` 或服务环境中配置：
+```bash
+HTTP_PROXY=http://your-proxy:port
+HTTPS_PROXY=http://your-proxy:port
 ```
+
+如使用 SOCKS 代理，请使用 `socks5://` 或 `socks5h://`，不要使用旧的 `socks://` scheme。系统会在检测到代理后自动补充国内行情域名到 `NO_PROXY`，降低代理影响行情数据源的概率。
 
 ---
 

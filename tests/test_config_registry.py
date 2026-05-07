@@ -141,5 +141,45 @@ class TestDiscordInteractionPublicKeyField(unittest.TestCase):
         self.assertIn("DISCORD_INTERACTIONS_PUBLIC_KEY", field_keys)
 
 
+class TestProxyFieldsRegistered(unittest.TestCase):
+    """Proxy config keys must be present in the system settings registry."""
+
+    _PROXY_KEYS = (
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "NO_PROXY",
+        "USE_PROXY",
+        "PROXY_HOST",
+        "PROXY_PORT",
+    )
+
+    def test_field_definitions_exist(self):
+        for key in self._PROXY_KEYS:
+            field = get_field_definition(key)
+            self.assertEqual(field["category"], "system", f"{key} category")
+            self.assertNotEqual(
+                field["display_order"], 9000,
+                f"{key} should be explicitly registered, not inferred",
+            )
+
+    def test_proxy_urls_allow_socks5h_but_not_legacy_socks_scheme(self):
+        for key in ("HTTP_PROXY", "HTTPS_PROXY"):
+            field = get_field_definition(key)
+            self.assertEqual(field["validation"]["item_type"], "url")
+            self.assertIn("socks5h", field["validation"]["allowed_schemes"])
+            self.assertNotIn("socks", field["validation"]["allowed_schemes"])
+
+    def test_schema_response_includes_proxy_fields(self):
+        schema = build_schema_response()
+        system_cat = next(
+            (c for c in schema["categories"] if c["category"] == "system"),
+            None,
+        )
+        self.assertIsNotNone(system_cat, "system category missing")
+        field_keys = {f["key"] for f in system_cat["fields"]}
+        for key in self._PROXY_KEYS:
+            self.assertIn(key, field_keys, f"{key} missing from schema response")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1020,7 +1020,8 @@ class Config:
         # === 智能代理配置 (关键修复) ===
         # 如果配置了代理，自动设置 NO_PROXY 以排除国内数据源，避免行情获取失败
         http_proxy = os.getenv('HTTP_PROXY') or os.getenv('http_proxy')
-        if http_proxy:
+        https_proxy = os.getenv('HTTPS_PROXY') or os.getenv('https_proxy')
+        if http_proxy or https_proxy:
             # 国内金融数据源域名列表
             domestic_domains = [
                 'eastmoney.com',   # 东方财富 (Efinance/Akshare)
@@ -1048,12 +1049,11 @@ class Config:
             os.environ['NO_PROXY'] = final_no_proxy
             os.environ['no_proxy'] = final_no_proxy
 
-            # 确保 HTTP_PROXY 也被正确设置（以防仅在 .env 中定义但未导出）
-            os.environ['HTTP_PROXY'] = http_proxy
-            os.environ['http_proxy'] = http_proxy
+            # 确保代理变量大小写都可用（以防仅在 .env 中定义但未导出）
+            if http_proxy:
+                os.environ['HTTP_PROXY'] = http_proxy
+                os.environ['http_proxy'] = http_proxy
 
-            # HTTPS_PROXY 同理
-            https_proxy = os.getenv('HTTPS_PROXY') or os.getenv('https_proxy')
             if https_proxy:
                 os.environ['HTTPS_PROXY'] = https_proxy
                 os.environ['https_proxy'] = https_proxy
@@ -1507,8 +1507,8 @@ class Config:
             max_workers=parse_env_int(os.getenv('MAX_WORKERS'), 3, field_name='MAX_WORKERS', minimum=1),
             debug=os.getenv('DEBUG', 'false').lower() == 'true',
             config_validate_mode=os.getenv('CONFIG_VALIDATE_MODE', 'warn').lower(),
-            http_proxy=os.getenv('HTTP_PROXY'),
-            https_proxy=os.getenv('HTTPS_PROXY'),
+            http_proxy=os.getenv('HTTP_PROXY') or os.getenv('http_proxy'),
+            https_proxy=os.getenv('HTTPS_PROXY') or os.getenv('https_proxy'),
             schedule_enabled=cls._resolve_env_value(
                 'SCHEDULE_ENABLED',
                 default='false',

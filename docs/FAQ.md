@@ -115,12 +115,17 @@
 
 在 `.env` 中配置：
 ```bash
+# 推荐：直接配置标准代理变量，适用于本地、Docker、PM2 等部署方式
+HTTP_PROXY=http://127.0.0.1:10809
+HTTPS_PROXY=http://127.0.0.1:10809
+
+# 兼容：本地 main.py 入口快捷开关
 USE_PROXY=true
 PROXY_HOST=127.0.0.1
 PROXY_PORT=10809
 ```
 
-> ⚠️ 注意：代理配置仅对本地运行生效，GitHub Actions 环境无需配置代理。
+> ⚠️ 注意：`USE_PROXY/PROXY_HOST/PROXY_PORT` 仅是本地快捷开关，GitHub Actions 环境会跳过；部署环境优先使用 `HTTP_PROXY/HTTPS_PROXY`。如果代理地址使用 SOCKS，请使用 `socks5://` 或 `socks5h://`，不要使用旧的 `socks://` scheme。
 
 ---
 

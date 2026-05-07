@@ -53,6 +53,24 @@ class ConfigEnvCompatibilityTestCase(unittest.TestCase):
 
     @patch("src.config.setup_env")
     @patch.object(Config, "_parse_litellm_yaml", return_value=[])
+    def test_load_from_env_reads_lowercase_https_proxy_without_http_proxy(
+        self, _mock_parse_litellm_yaml, _mock_setup_env
+    ):
+        with patch.dict(
+            os.environ,
+            {
+                "STOCK_LIST": "600519",
+                "https_proxy": "socks5h://127.0.0.1:10808",
+            },
+            clear=True,
+        ):
+            config = Config._load_from_env()
+
+        self.assertEqual(config.https_proxy, "socks5h://127.0.0.1:10808")
+        self.assertEqual(os.environ["HTTPS_PROXY"], "socks5h://127.0.0.1:10808")
+
+    @patch("src.config.setup_env")
+    @patch.object(Config, "_parse_litellm_yaml", return_value=[])
     def test_schedule_run_immediately_falls_back_to_legacy_run_immediately(
         self,
         _mock_parse_yaml,

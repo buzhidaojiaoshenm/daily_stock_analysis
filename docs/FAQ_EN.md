@@ -113,12 +113,17 @@ This document compiles common issues encountered by users and their solutions.
 
 Configure in `.env`:
 ```bash
+# Recommended: use standard proxy variables for local, Docker, PM2, and similar deployments
+HTTP_PROXY=http://127.0.0.1:10809
+HTTPS_PROXY=http://127.0.0.1:10809
+
+# Compatibility: local main.py shortcut
 USE_PROXY=true
 PROXY_HOST=127.0.0.1
 PROXY_PORT=10809
 ```
 
-> Note: Proxy configuration only works for local runs, GitHub Actions environment doesn't need proxy.
+> Note: `USE_PROXY/PROXY_HOST/PROXY_PORT` is only a local shortcut and is skipped in GitHub Actions. Prefer `HTTP_PROXY/HTTPS_PROXY` for deployments. For SOCKS proxies, use `socks5://` or `socks5h://`; do not use the legacy `socks://` scheme.
 
 ---
 

@@ -338,6 +338,9 @@ daily_stock_analysis/
 | `SCHEDULE_ENABLED` | 启用定时任务 | `false` |
 | `SCHEDULE_TIME` | 定时执行时间，按 `SCHEDULE_TIMEZONE` 解释 | `18:00` |
 | `SCHEDULE_TIMEZONE` | 定时任务时区（IANA 名称） | `Asia/Shanghai` |
+| `HTTP_PROXY` / `HTTPS_PROXY` | 标准代理入口，适用于本地、Docker、PM2 等部署方式；SOCKS 代理使用 `socks5://` 或 `socks5h://` | - |
+| `NO_PROXY` | 代理直连域名列表；检测到代理时系统会自动补充国内行情域名 | - |
+| `USE_PROXY` / `PROXY_HOST` / `PROXY_PORT` | 本地 `main.py` 入口兼容快捷开关，会生成 `http://PROXY_HOST:PROXY_PORT`，GitHub Actions 自动跳过 | `false` / `127.0.0.1` / `10809` |
 | `LOG_DIR` | 日志目录 | `./logs` |
 
 ---

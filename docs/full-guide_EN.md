@@ -294,6 +294,9 @@ Default schedule: Every weekday at **18:00 (Beijing Time)** automatic execution.
 | `SCHEDULE_ENABLED` | Enable scheduled tasks | `false` |
 | `SCHEDULE_TIME` | Scheduled execution time, interpreted in `SCHEDULE_TIMEZONE` | `18:00` |
 | `SCHEDULE_TIMEZONE` | Scheduled task timezone (IANA name) | `Asia/Shanghai` |
+| `HTTP_PROXY` / `HTTPS_PROXY` | Standard proxy entry points for local, Docker, PM2, and similar deployments; use `socks5://` or `socks5h://` for SOCKS proxies | - |
+| `NO_PROXY` | Domains that bypass the proxy; domestic market-data domains are appended automatically when a proxy is detected | - |
+| `USE_PROXY` / `PROXY_HOST` / `PROXY_PORT` | Compatibility shortcut for the local `main.py` entry point; builds `http://PROXY_HOST:PROXY_PORT` and is skipped in GitHub Actions | `false` / `127.0.0.1` / `10809` |
 | `LOG_DIR` | Log directory | `./logs` |
 
 > Behavior notes:

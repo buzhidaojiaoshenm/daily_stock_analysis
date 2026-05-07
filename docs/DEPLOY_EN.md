@@ -210,17 +210,19 @@ If server is in mainland China, accessing Gemini API requires proxy:
 Edit `docker-compose.yml`:
 ```yaml
 environment:
-  - http_proxy=http://your-proxy:port
-  - https_proxy=http://your-proxy:port
+  - HTTP_PROXY=http://your-proxy:port
+  - HTTPS_PROXY=http://your-proxy:port
 ```
 
 ### Direct Deployment Method
 
-Edit top of `main.py`:
-```python
-os.environ["http_proxy"] = "http://your-proxy:port"
-os.environ["https_proxy"] = "http://your-proxy:port"
+Configure `.env` or the service environment:
+```bash
+HTTP_PROXY=http://your-proxy:port
+HTTPS_PROXY=http://your-proxy:port
 ```
+
+For SOCKS proxies, use `socks5://` or `socks5h://`; do not use the legacy `socks://` scheme. When a proxy is detected, the application automatically adds domestic market-data domains to `NO_PROXY` to reduce the chance of proxying local quote providers.
 
 ---
 

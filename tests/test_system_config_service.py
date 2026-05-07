@@ -185,6 +185,20 @@ class SystemConfigServiceTestCase(unittest.TestCase):
         self.assertFalse(validation["valid"])
         self.assertTrue(any(issue["code"] == "invalid_url" for issue in validation["issues"]))
 
+    def test_validate_accepts_socks5h_proxy_url(self) -> None:
+        validation = self.service.validate(
+            items=[{"key": "HTTPS_PROXY", "value": "socks5h://127.0.0.1:10808"}]
+        )
+        self.assertTrue(validation["valid"], validation["issues"])
+        self.assertEqual(validation["issues"], [])
+
+    def test_validate_rejects_legacy_socks_proxy_scheme(self) -> None:
+        validation = self.service.validate(
+            items=[{"key": "HTTPS_PROXY", "value": "socks://127.0.0.1:10808"}]
+        )
+        self.assertFalse(validation["valid"])
+        self.assertTrue(any(issue["code"] == "invalid_url" for issue in validation["issues"]))
+
     def test_validate_warns_when_feishu_app_credentials_are_used_without_webhook(self) -> None:
         validation = self.service.validate(
             items=[

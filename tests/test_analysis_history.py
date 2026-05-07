@@ -728,6 +728,19 @@ class AnalysisHistoryTestCase(unittest.TestCase):
                 0,
             )
 
+    def test_history_detail_accepts_query_id_as_compatibility_lookup(self) -> None:
+        """非数字路径参数作为 query_id 兼容查询，正式唯一入口仍是主键 ID。"""
+        if get_history_detail is None:
+            self.skipTest("fastapi is not installed in this test environment")
+
+        record_id = self._save_history("query_detail_compat_001")
+
+        report = get_history_detail("query_detail_compat_001", db_manager=self.db)
+
+        self.assertEqual(report.meta.id, record_id)
+        self.assertEqual(report.meta.query_id, "query_detail_compat_001")
+        self.assertEqual(report.meta.stock_code, "600519")
+
     @patch("src.auth.is_auth_enabled", return_value=False)
     def test_delete_history_api_deletes_selected_records(self, mock_auth) -> None:
         """DELETE /api/v1/history should remove only the requested records."""

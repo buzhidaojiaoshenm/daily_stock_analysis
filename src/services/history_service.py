@@ -139,7 +139,9 @@ class HistoryService:
         Resolve a record_id parameter to an AnalysisHistory object.
 
         Tries integer primary key first; falls back to query_id string lookup
-        when the value is not a valid integer.
+        when the value is not a valid integer. Because batch analysis may reuse
+        one query_id across multiple records, query_id compatibility lookup
+        returns the latest matching row.
 
         Args:
             record_id: integer PK (as string) or query_id string

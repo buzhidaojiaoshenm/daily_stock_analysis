@@ -6,7 +6,7 @@
 
 职责：
 1. 提供 GET /api/v1/history 历史列表查询接口
-2. 提供 GET /api/v1/history/{query_id} 历史详情查询接口
+2. 提供 GET /api/v1/history/{record_id} 历史详情查询接口
 """
 
 import logging
@@ -183,7 +183,10 @@ def delete_history_records(
         500: {"description": "服务器错误", "model": ErrorResponse},
     },
     summary="获取历史报告详情",
-    description="根据分析历史记录 ID 或 query_id 获取完整的历史分析报告"
+    description=(
+        "根据分析历史记录主键 ID 获取完整报告；非数字路径参数会作为 query_id 兼容查询，"
+        "因批量分析可能复用 query_id，兼容查询返回最新一条记录。"
+    )
 )
 def get_history_detail(
     record_id: str,
@@ -192,11 +195,12 @@ def get_history_detail(
     """
     获取历史报告详情
     
-    根据分析历史记录主键 ID 或 query_id 获取完整的历史分析报告。
-    优先尝试按主键 ID（整数）查询，若参数不是合法整数则按 query_id 查询。
+    根据分析历史记录主键 ID 获取完整的历史分析报告。
+    优先尝试按主键 ID（整数）查询，若参数不是合法整数则按 query_id
+    兼容查询，并返回该 query_id 下最新一条记录。
     
     Args:
-        record_id: 分析历史记录主键 ID（整数）或 query_id（字符串）
+        record_id: 分析历史记录主键 ID（整数）；非数字时作为 query_id 兼容查询
         db_manager: 数据库管理器依赖
         
     Returns:
@@ -352,7 +356,10 @@ def get_history_detail(
         500: {"description": "服务器错误", "model": ErrorResponse},
     },
     summary="获取历史报告关联新闻",
-    description="根据分析历史记录 ID 获取关联的新闻情报列表（为空也返回 200）"
+    description=(
+        "根据分析历史记录主键 ID 获取关联新闻；非数字路径参数会作为 query_id 兼容查询，"
+        "因批量分析可能复用 query_id，兼容查询返回最新一条记录的关联新闻。"
+    )
 )
 def get_history_news(
     record_id: str,
@@ -362,11 +369,11 @@ def get_history_news(
     """
     获取历史报告关联新闻
 
-    根据分析历史记录 ID 或 query_id 获取关联的新闻情报列表。
-    在内部完成 record_id → query_id 的解析。
+    根据分析历史记录主键 ID 获取关联的新闻情报列表。
+    非数字路径参数作为 query_id 兼容查询，并在内部完成 record_id → query_id 的解析。
 
     Args:
-        record_id: 分析历史记录主键 ID（整数）或 query_id（字符串）
+        record_id: 分析历史记录主键 ID（整数）；非数字时作为 query_id 兼容查询
         limit: 返回数量限制
         db_manager: 数据库管理器依赖
 
@@ -411,7 +418,10 @@ def get_history_news(
         500: {"description": "服务器错误", "model": ErrorResponse},
     },
     summary="获取历史报告 Markdown 格式",
-    description="根据分析历史记录 ID 获取 Markdown 格式的完整分析报告"
+    description=(
+        "根据分析历史记录主键 ID 获取 Markdown 格式的完整分析报告；"
+        "非数字路径参数会作为 query_id 兼容查询，兼容查询返回最新一条记录。"
+    )
 )
 def get_history_markdown(
     record_id: str,
@@ -420,10 +430,11 @@ def get_history_markdown(
     """
     获取历史报告的 Markdown 格式内容
 
-    根据分析历史记录 ID 或 query_id 生成与推送通知格式一致的 Markdown 报告。
+    根据分析历史记录主键 ID 生成与推送通知格式一致的 Markdown 报告。
+    非数字路径参数作为 query_id 兼容查询，并返回该 query_id 下最新一条记录。
 
     Args:
-        record_id: 分析历史记录主键 ID（整数）或 query_id（字符串）
+        record_id: 分析历史记录主键 ID（整数）；非数字时作为 query_id 兼容查询
         db_manager: 数据库管理器依赖
 
     Returns:

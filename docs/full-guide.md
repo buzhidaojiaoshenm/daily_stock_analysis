@@ -1055,6 +1055,9 @@ FastAPI 提供 RESTful API 服务，支持配置管理和触发分析。
 | `/api/v1/analysis/tasks/stream` | GET (SSE) | 订阅任务实时状态流 |
 | `/api/v1/analysis/status/{task_id}` | GET | 查询任务状态 |
 | `/api/v1/history` | GET | 查询分析历史 |
+| `/api/v1/history/{record_id}` | GET | 查询历史详情；`record_id` 是正式唯一入口，非数字参数作为 `query_id` 兼容查询并返回最新匹配记录 |
+| `/api/v1/history/{record_id}/news` | GET | 查询历史报告关联新闻；`query_id` 兼容查询语义同上 |
+| `/api/v1/history/{record_id}/markdown` | GET | 查询历史报告 Markdown；`query_id` 兼容查询语义同上 |
 | `/api/v1/usage/summary?period=today|month|all` | GET | 按调用类型与模型维度汇总 LLM 调用次数和 Token 用量 |
 | `/api/v1/market-review/run` | POST | 触发大盘复盘并返回 Markdown 报告 |
 | `/api/v1/backtest/run` | POST | 触发回测 |

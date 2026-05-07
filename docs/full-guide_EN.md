@@ -890,6 +890,9 @@ FastAPI provides RESTful API service for configuration management and triggering
 | `/api/v1/analysis/tasks/stream` | GET (SSE) | Subscribe to realtime task updates |
 | `/api/v1/analysis/status/{task_id}` | GET | Query task status |
 | `/api/v1/history` | GET | Query analysis history |
+| `/api/v1/history/{record_id}` | GET | Query history detail; `record_id` is the canonical unique key, while non-numeric values are treated as query_id compatibility lookups and return the latest match |
+| `/api/v1/history/{record_id}/news` | GET | Query news linked to a history report; query_id compatibility lookup follows the same rule |
+| `/api/v1/history/{record_id}/markdown` | GET | Query the Markdown report; query_id compatibility lookup follows the same rule |
 | `/api/v1/usage/summary?period=today|month|all` | GET | Query LLM call counts and token usage grouped by call type and model |
 | `/api/v1/market-review/run` | POST | Trigger market review and return a Markdown report |
 | `/api/v1/backtest/run` | POST | Trigger backtest |

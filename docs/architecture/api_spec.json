@@ -294,20 +294,20 @@
         }
       }
     },
-    "/api/v1/history/{query_id}": {
+    "/api/v1/history/{record_id}": {
       "get": {
         "tags": [
           "History"
         ],
         "summary": "获取历史报告详情",
-        "description": "根据 query_id 获取完整的历史分析报告",
+        "description": "根据分析历史记录主键 ID 获取完整报告；非数字路径参数会作为 query_id 兼容查询，因批量分析可能复用 query_id，兼容查询返回最新一条记录。",
         "operationId": "getHistoryDetail",
         "parameters": [
           {
-            "name": "query_id",
+            "name": "record_id",
             "in": "path",
             "required": true,
-            "description": "分析记录唯一标识",
+            "description": "分析历史记录主键 ID；非数字时作为 query_id 兼容查询",
             "schema": {
               "type": "string"
             }
@@ -337,20 +337,20 @@
         }
       }
     },
-    "/api/v1/history/{query_id}/news": {
+    "/api/v1/history/{record_id}/news": {
       "get": {
         "tags": [
           "History"
         ],
         "summary": "获取历史报告关联新闻",
-        "description": "根据 query_id 获取关联的新闻情报列表（为空也返回 200）",
+        "description": "根据分析历史记录主键 ID 获取关联新闻；非数字路径参数会作为 query_id 兼容查询，兼容查询返回最新一条记录的关联新闻。",
         "operationId": "getHistoryNews",
         "parameters": [
           {
-            "name": "query_id",
+            "name": "record_id",
             "in": "path",
             "required": true,
-            "description": "分析记录唯一标识",
+            "description": "分析历史记录主键 ID；非数字时作为 query_id 兼容查询",
             "schema": {
               "type": "string"
             }

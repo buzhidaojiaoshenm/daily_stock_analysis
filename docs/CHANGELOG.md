@@ -21,7 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [改进] 统一代理配置说明与系统设置 schema，补齐 `HTTPS_PROXY`、`NO_PROXY` 及本地代理快捷开关，并兼容小写代理环境变量。
 - [改进] 明确历史详情、新闻和 Markdown 接口以 `record_id` 为正式唯一入口，保留非数字 `query_id` 最新记录兼容查询语义。
 - [改进] Agent 多轮对话历史新增近似 token 预算压缩，保留最近上下文并显式标注被省略或截断的旧消息。
+- [改进] 异步分析任务新增数据库状态快照，服务重启后任务列表和状态查询不再丢失最近任务；无人接管的 pending/processing 任务会标记为失败并提示重新提交。
+- [修复] 系统配置 API 允许 schema 字段使用小数排序值，避免设置页配置读取被响应模型校验拦截。
 - [文档] 补充本地验证矩阵，明确后端、Web、桌面端、AI governance 以及离线检查和网络 smoke 的边界。
+- [测试] 为 pytest 的 AnyIO BlockingPortal 增加测试期事件循环 keepalive，避免 FastAPI TestClient 在本地 Python 3.13 环境中卡死。
 - [测试] 修正 `test_env.py` 通知测试对企业微信渠道的判断，避免其他通知渠道已配置时误读空 Webhook。
 
 ## [3.14.1] - 2026-04-26

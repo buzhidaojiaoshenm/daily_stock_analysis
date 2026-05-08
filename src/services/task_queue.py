@@ -14,6 +14,7 @@ A股自选股智能分析系统 - 异步任务队列
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import threading
 import uuid
@@ -145,9 +146,11 @@ class AnalysisTaskQueue:
                     cls._instance = super().__new__(cls)
         return cls._instance
     
-    def __init__(self, max_workers: int = 3):
+    def __init__(self, max_workers: int = 3, persist_tasks: bool = False):
         # 防止重复初始化
         if hasattr(self, '_initialized') and self._initialized:
+            if persist_tasks:
+                self.enable_persistence()
             return
         
         self._max_workers = max_workers
@@ -170,8 +173,11 @@ class AnalysisTaskQueue:
         
         # 任务历史保留数量（内存中）
         self._max_history = 100
+        self._persist_tasks = False
         
         self._initialized = True
+        if persist_tasks:
+            self.enable_persistence()
         logger.info(f"[TaskQueue] 初始化完成，最大并发: {max_workers}")
     
     @property
@@ -245,6 +251,100 @@ class AnalysisTaskQueue:
         if log:
             logger.info("[TaskQueue] 最大并发已更新: %s -> %s", previous, target)
         return "applied"
+
+    def enable_persistence(self) -> None:
+        """Enable durable DB-backed task snapshots for API/runtime queues."""
+        with self._data_lock:
+            if self._persist_tasks:
+                return
+            self._persist_tasks = True
+            has_memory_tasks = bool(self._tasks)
+
+        if has_memory_tasks:
+            self._persist_current_memory_tasks()
+            return
+
+        try:
+            db = self._get_task_db()
+            interrupted = db.mark_incomplete_analysis_tasks_failed(
+                "服务重启，任务已中断，请重新提交分析"
+            )
+            if interrupted:
+                logger.warning("[TaskQueue] 标记 %s 个重启中断任务为失败", interrupted)
+        except Exception as exc:
+            logger.debug("[TaskQueue] 启用任务持久化失败（降级为内存队列）: %s", exc)
+
+    def _get_task_db(self):
+        from src.storage import DatabaseManager
+
+        return DatabaseManager.get_instance()
+
+    def _persist_current_memory_tasks(self) -> None:
+        with self._data_lock:
+            snapshots = [task.copy() for task in self._tasks.values()]
+        for task in snapshots:
+            self._persist_task_snapshot(task)
+
+    def _persist_task_snapshot(self, task: Optional[TaskInfo]) -> None:
+        if not self._persist_tasks or task is None:
+            return
+
+        try:
+            self._get_task_db().upsert_analysis_task({
+                "task_id": task.task_id,
+                "stock_code": task.stock_code,
+                "stock_name": task.stock_name,
+                "status": task.status.value,
+                "progress": task.progress,
+                "message": task.message,
+                "result": task.result,
+                "error": task.error,
+                "report_type": task.report_type,
+                "created_at": task.created_at,
+                "started_at": task.started_at,
+                "completed_at": task.completed_at,
+                "original_query": task.original_query,
+                "selection_source": task.selection_source,
+            })
+        except Exception as exc:
+            logger.debug(
+                "[TaskQueue] 任务持久化失败（fail-open）: task_id=%s err=%s",
+                task.task_id,
+                exc,
+            )
+
+    def _task_from_persisted_row(self, row: Any) -> TaskInfo:
+        result = None
+        result_json = getattr(row, "result_json", None)
+        if result_json:
+            try:
+                parsed = json.loads(result_json)
+                result = parsed if isinstance(parsed, dict) else None
+            except Exception:
+                result = None
+
+        status_value = getattr(row, "status", TaskStatus.PENDING.value)
+        try:
+            status = TaskStatus(status_value)
+        except ValueError:
+            status = TaskStatus.FAILED
+
+        return TaskInfo(
+            task_id=row.task_id,
+            stock_code=row.stock_code,
+            stock_name=getattr(row, "stock_name", None),
+            status=status,
+            progress=int(getattr(row, "progress", 0) or 0),
+            message=getattr(row, "message", None),
+            result=result,
+            error=getattr(row, "error", None),
+            report_type=getattr(row, "report_type", None) or "detailed",
+            created_at=getattr(row, "created_at", None) or datetime.now(),
+            started_at=getattr(row, "started_at", None),
+            completed_at=getattr(row, "completed_at", None),
+            original_query=getattr(row, "original_query", None),
+            selection_source=getattr(row, "selection_source", None),
+        )
     
     # ========== 任务提交与查询 ==========
     
@@ -406,6 +506,7 @@ class AnalysisTaskQueue:
             # Broadcasting here also preserves batch rollback semantics because we only
             # reach this point after every submit in the batch has succeeded.
             for task_info in accepted:
+                self._persist_task_snapshot(task_info)
                 self._broadcast_event("task_created", task_info.to_dict())
 
         return accepted, duplicates
@@ -435,7 +536,18 @@ class AnalysisTaskQueue:
         """
         with self._data_lock:
             task = self._tasks.get(task_id)
-            return task.copy() if task else None
+            if task:
+                return task.copy()
+
+        if self._persist_tasks:
+            try:
+                row = self._get_task_db().get_analysis_task(task_id)
+                return self._task_from_persisted_row(row) if row else None
+            except Exception as exc:
+                logger.debug("[TaskQueue] 读取持久化任务失败: task_id=%s err=%s", task_id, exc)
+                return None
+
+        return None
     
     def list_pending_tasks(self) -> List[TaskInfo]:
         """
@@ -445,10 +557,22 @@ class AnalysisTaskQueue:
             任务列表（副本）
         """
         with self._data_lock:
-            return [
+            memory_tasks = [
                 task.copy() for task in self._tasks.values()
                 if task.status in (TaskStatus.PENDING, TaskStatus.PROCESSING)
             ]
+        if not self._persist_tasks:
+            return memory_tasks
+
+        try:
+            rows = self._get_task_db().list_analysis_tasks(
+                limit=self._max_history,
+                statuses=[TaskStatus.PENDING.value, TaskStatus.PROCESSING.value],
+            )
+            return [self._task_from_persisted_row(row) for row in rows]
+        except Exception as exc:
+            logger.debug("[TaskQueue] 读取持久化进行中任务失败: %s", exc)
+            return memory_tasks
     
     def list_all_tasks(self, limit: int = 50) -> List[TaskInfo]:
         """
@@ -461,12 +585,20 @@ class AnalysisTaskQueue:
             任务列表（副本）
         """
         with self._data_lock:
-            tasks = sorted(
+            memory_tasks = sorted(
                 self._tasks.values(),
                 key=lambda t: t.created_at,
                 reverse=True
             )
-            return [t.copy() for t in tasks[:limit]]
+            if not self._persist_tasks:
+                return [t.copy() for t in memory_tasks[:limit]]
+
+        try:
+            rows = self._get_task_db().list_analysis_tasks(limit=limit)
+            return [self._task_from_persisted_row(row) for row in rows]
+        except Exception as exc:
+            logger.debug("[TaskQueue] 读取持久化任务列表失败: %s", exc)
+            return [t.copy() for t in memory_tasks[:limit]]
     
     def get_task_stats(self) -> Dict[str, int]:
         """
@@ -476,6 +608,12 @@ class AnalysisTaskQueue:
             统计信息字典
         """
         with self._data_lock:
+            if self._persist_tasks:
+                try:
+                    return self._get_task_db().get_analysis_task_stats()
+                except Exception as exc:
+                    logger.debug("[TaskQueue] 读取持久化任务统计失败: %s", exc)
+
             stats = {
                 "total": len(self._tasks),
                 "pending": 0,
@@ -520,6 +658,7 @@ class AnalysisTaskQueue:
 
             task_snapshot = task.copy()
 
+        self._persist_task_snapshot(task_snapshot)
         self._broadcast_event(event_type, task_snapshot.to_dict())
         return task_snapshot
     
@@ -554,8 +693,10 @@ class AnalysisTaskQueue:
             task.started_at = datetime.now()
             task.message = "正在分析中..."
             task.progress = 10
+            task_snapshot = task.copy()
         
-        self._broadcast_event("task_started", task.to_dict())
+        self._persist_task_snapshot(task_snapshot)
+        self._broadcast_event("task_started", task_snapshot.to_dict())
         
         try:
             # 导入分析服务（延迟导入避免循环依赖）
@@ -592,8 +733,13 @@ class AnalysisTaskQueue:
                         dedupe_key = _dedupe_stock_code_key(task.stock_code)
                         if dedupe_key in self._analyzing_stocks:
                             del self._analyzing_stocks[dedupe_key]
+                        task_snapshot = task.copy()
+                    else:
+                        task_snapshot = None
                 
-                self._broadcast_event("task_completed", task.to_dict())
+                self._persist_task_snapshot(task_snapshot)
+                if task_snapshot:
+                    self._broadcast_event("task_completed", task_snapshot.to_dict())
                 logger.info(f"[TaskQueue] 任务完成: {task_id} ({stock_code})")
                 
                 # 清理过期任务
@@ -620,8 +766,13 @@ class AnalysisTaskQueue:
                     dedupe_key = _dedupe_stock_code_key(task.stock_code)
                     if dedupe_key in self._analyzing_stocks:
                         del self._analyzing_stocks[dedupe_key]
+                    task_snapshot = task.copy()
+                else:
+                    task_snapshot = None
             
-            self._broadcast_event("task_failed", task.to_dict())
+            self._persist_task_snapshot(task_snapshot)
+            if task_snapshot:
+                self._broadcast_event("task_failed", task_snapshot.to_dict())
             
             # 清理过期任务
             self._cleanup_old_tasks()
@@ -749,7 +900,7 @@ def get_task_queue() -> AnalysisTaskQueue:
     Returns:
         AnalysisTaskQueue 实例
     """
-    queue = AnalysisTaskQueue()
+    queue = AnalysisTaskQueue(persist_tasks=True)
     try:
         from src.config import get_config
 

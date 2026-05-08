@@ -273,6 +273,37 @@ class AnalysisHistory(Base):
         }
 
 
+class AnalysisTask(Base):
+    """
+    Persisted async analysis task state.
+
+    The task queue keeps an in-memory runtime cache, while this table is the
+    durable source used after API process restarts.
+    """
+    __tablename__ = 'analysis_tasks'
+
+    task_id = Column(String(64), primary_key=True)
+    stock_code = Column(String(16), nullable=False, index=True)
+    stock_name = Column(String(80))
+    status = Column(String(20), nullable=False, index=True)
+    progress = Column(Integer, nullable=False, default=0)
+    message = Column(Text)
+    result_json = Column(Text)
+    error = Column(Text)
+    report_type = Column(String(16), nullable=False, default="detailed")
+    original_query = Column(String(255))
+    selection_source = Column(String(32))
+    created_at = Column(DateTime, default=datetime.now, index=True)
+    started_at = Column(DateTime)
+    completed_at = Column(DateTime, index=True)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, index=True)
+
+    __table_args__ = (
+        Index('ix_analysis_tasks_status_created', 'status', 'created_at'),
+        Index('ix_analysis_tasks_stock_status', 'stock_code', 'status'),
+    )
+
+
 class BacktestResult(Base):
     """单条分析记录的回测结果。"""
 
@@ -1383,6 +1414,146 @@ class DatabaseManager:
                 .limit(1)
             ).scalars().first()
             return result
+
+    def upsert_analysis_task(
+        self,
+        task: Dict[str, Any],
+    ) -> int:
+        """
+        Insert or update a persisted async analysis task snapshot.
+
+        Args:
+            task: Task fields keyed by column name. ``result`` is accepted and
+                stored as JSON in ``result_json``.
+
+        Returns:
+            1 when a task row was written, otherwise 0.
+        """
+        task_id = (task.get("task_id") or "").strip()
+        stock_code = (task.get("stock_code") or "").strip()
+        if not task_id or not stock_code:
+            return 0
+
+        now = datetime.now()
+        payload = {
+            "task_id": task_id,
+            "stock_code": stock_code,
+            "stock_name": task.get("stock_name"),
+            "status": task.get("status") or "pending",
+            "progress": int(task.get("progress") or 0),
+            "message": task.get("message"),
+            "result_json": self._safe_json_dumps(task.get("result")) if task.get("result") is not None else None,
+            "error": task.get("error"),
+            "report_type": task.get("report_type") or "detailed",
+            "original_query": task.get("original_query"),
+            "selection_source": task.get("selection_source"),
+            "created_at": task.get("created_at") or now,
+            "started_at": task.get("started_at"),
+            "completed_at": task.get("completed_at"),
+            "updated_at": now,
+        }
+
+        def _write(session: Session) -> int:
+            existing = session.execute(
+                select(AnalysisTask).where(AnalysisTask.task_id == task_id)
+            ).scalar_one_or_none()
+            if existing is None:
+                session.add(AnalysisTask(**payload))
+                return 1
+
+            for key, value in payload.items():
+                if key != "task_id":
+                    setattr(existing, key, value)
+            return 1
+
+        return self._run_write_transaction(
+            f"upsert_analysis_task[{task_id}]",
+            _write,
+        )
+
+    def get_analysis_task(self, task_id: str) -> Optional[AnalysisTask]:
+        """Return a persisted async task by id."""
+        if not task_id:
+            return None
+
+        with self.get_session() as session:
+            return session.execute(
+                select(AnalysisTask).where(AnalysisTask.task_id == task_id)
+            ).scalar_one_or_none()
+
+    def list_analysis_tasks(
+        self,
+        limit: int = 50,
+        statuses: Optional[List[str]] = None,
+    ) -> List[AnalysisTask]:
+        """List persisted async tasks by newest creation time."""
+        limit = max(1, min(500, int(limit or 50)))
+        normalized_statuses = [
+            status.strip().lower()
+            for status in (statuses or [])
+            if status and status.strip()
+        ]
+
+        with self.get_session() as session:
+            query = select(AnalysisTask)
+            if normalized_statuses:
+                query = query.where(AnalysisTask.status.in_(normalized_statuses))
+            query = query.order_by(desc(AnalysisTask.created_at)).limit(limit)
+            return list(session.execute(query).scalars().all())
+
+    def get_analysis_task_stats(self) -> Dict[str, int]:
+        """Return persisted async task counts grouped by status."""
+        stats = {
+            "total": 0,
+            "pending": 0,
+            "processing": 0,
+            "completed": 0,
+            "failed": 0,
+        }
+
+        with self.get_session() as session:
+            rows = session.execute(
+                select(AnalysisTask.status, func.count(AnalysisTask.task_id))
+                .group_by(AnalysisTask.status)
+            ).all()
+
+        for status, count in rows:
+            key = (status or "").lower()
+            stats[key] = int(count or 0)
+            stats["total"] += int(count or 0)
+        return stats
+
+    def mark_incomplete_analysis_tasks_failed(
+        self,
+        message: str,
+    ) -> int:
+        """
+        Mark tasks left pending/processing by a previous process as failed.
+
+        This prevents API restarts from making tasks disappear or remain stuck
+        forever in an active state that no worker owns anymore.
+        """
+        terminal_message = message or "服务重启，任务已中断"
+        completed_at = datetime.now()
+
+        def _write(session: Session) -> int:
+            rows = session.execute(
+                select(AnalysisTask).where(
+                    AnalysisTask.status.in_(["pending", "processing"])
+                )
+            ).scalars().all()
+            for row in rows:
+                row.status = "failed"
+                row.completed_at = completed_at
+                row.updated_at = completed_at
+                row.error = terminal_message
+                row.message = terminal_message
+            return len(rows)
+
+        return self._run_write_transaction(
+            "mark_incomplete_analysis_tasks_failed",
+            _write,
+        )
     
     def get_data_range(
         self, 

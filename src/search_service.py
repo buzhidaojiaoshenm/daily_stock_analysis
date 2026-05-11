@@ -16,7 +16,7 @@ import re
 import threading
 import time
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from typing import List, Dict, Any, Optional, Tuple
@@ -113,11 +113,23 @@ class SearchResult:
     url: str
     source: str  # 来源网站
     published_date: Optional[str] = None
+    sentiment_score: Optional[int] = None
+    sentiment_label: Optional[str] = None
+    risk_tags: List[str] = field(default_factory=list)
+    catalyst_tags: List[str] = field(default_factory=list)
     
     def to_text(self) -> str:
         """转换为文本格式"""
         date_str = f" ({self.published_date})" if self.published_date else ""
-        return f"【{self.source}】{self.title}{date_str}\n{self.snippet}"
+        signal_parts = []
+        if self.sentiment_label:
+            signal_parts.append(f"情绪={self.sentiment_label}")
+        if self.risk_tags:
+            signal_parts.append(f"风险={','.join(self.risk_tags)}")
+        if self.catalyst_tags:
+            signal_parts.append(f"催化={','.join(self.catalyst_tags)}")
+        signal_text = f"\n信号: {'; '.join(signal_parts)}" if signal_parts else ""
+        return f"【{self.source}】{self.title}{date_str}\n{self.snippet}{signal_text}"
 
 
 @dataclass 
@@ -2116,6 +2128,43 @@ class SearchService:
     FUTURE_TOLERANCE_DAYS = 1
     _CHINESE_TEXT_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff]")
     _US_STOCK_RE = re.compile(r"^[A-Za-z]{1,5}(\.[A-Za-z])?$")
+    _RISK_SIGNAL_KEYWORDS: Tuple[Tuple[str, str], ...] = (
+        ("减持", "减持"),
+        ("清仓", "减持"),
+        ("处罚", "监管处罚"),
+        ("违规", "监管处罚"),
+        ("立案", "监管调查"),
+        ("调查", "监管调查"),
+        ("诉讼", "诉讼纠纷"),
+        ("仲裁", "诉讼纠纷"),
+        ("预亏", "业绩亏损"),
+        ("亏损", "业绩亏损"),
+        ("下滑", "业绩下滑"),
+        ("暴雷", "重大风险"),
+        ("insider selling", "insider_selling"),
+        ("lawsuit", "lawsuit"),
+        ("litigation", "litigation"),
+        ("investigation", "investigation"),
+        ("loss", "earnings_loss"),
+    )
+    _CATALYST_SIGNAL_KEYWORDS: Tuple[Tuple[str, str], ...] = (
+        ("预增", "业绩增长"),
+        ("增长", "业绩增长"),
+        ("扭亏", "业绩改善"),
+        ("中标", "订单合同"),
+        ("订单", "订单合同"),
+        ("合同", "订单合同"),
+        ("回购", "股份回购"),
+        ("增持", "股东增持"),
+        ("分红", "分红回报"),
+        ("突破", "业务突破"),
+        ("beat", "earnings_beat"),
+        ("growth", "growth"),
+        ("buyback", "buyback"),
+        ("dividend", "dividend"),
+        ("contract", "contract"),
+        ("order", "contract"),
+    )
 
     def __init__(
         self,
@@ -2621,11 +2670,8 @@ class SearchService:
                 continue
 
             filtered.append(
-                SearchResult(
-                    title=item.title,
-                    snippet=item.snippet,
-                    url=item.url,
-                    source=item.source,
+                self._enrich_search_result(
+                    item,
                     published_date=published.isoformat(),
                 )
             )
@@ -2669,11 +2715,8 @@ class SearchService:
         for item in response.results[:max_results]:
             normalized_date = self._normalize_news_publish_date(item.published_date)
             normalized_results.append(
-                SearchResult(
-                    title=item.title,
-                    snippet=item.snippet,
-                    url=item.url,
-                    source=item.source,
+                self._enrich_search_result(
+                    item,
                     published_date=(
                         normalized_date.isoformat() if normalized_date is not None else item.published_date
                     ),
@@ -2687,6 +2730,65 @@ class SearchService:
             success=response.success,
             error_message=response.error_message,
             search_time=response.search_time,
+        )
+
+    @classmethod
+    def _match_signal_tags(cls, text: str, keywords: Tuple[Tuple[str, str], ...]) -> List[str]:
+        normalized = text.lower()
+        tags: List[str] = []
+        for keyword, tag in keywords:
+            if keyword.lower() in normalized and tag not in tags:
+                tags.append(tag)
+        return tags
+
+    @staticmethod
+    def _sentiment_label_from_score(score: int) -> str:
+        if score >= 60:
+            return "positive"
+        if score <= 40:
+            return "negative"
+        return "neutral"
+
+    @classmethod
+    def _score_news_signal(cls, risk_tags: List[str], catalyst_tags: List[str]) -> Tuple[int, str]:
+        score = 50
+        score -= min(45, 20 * len(risk_tags))
+        score += min(35, 15 * len(catalyst_tags))
+        score = max(0, min(100, score))
+        return score, cls._sentiment_label_from_score(score)
+
+    @classmethod
+    def _enrich_search_result(
+        cls,
+        item: SearchResult,
+        *,
+        published_date: Optional[str] = None,
+    ) -> SearchResult:
+        """Attach lightweight sentiment/risk/catalyst tags without external calls."""
+        text = f"{item.title or ''} {item.snippet or ''}"
+        risk_tags = list(item.risk_tags) if item.risk_tags else cls._match_signal_tags(
+            text,
+            cls._RISK_SIGNAL_KEYWORDS,
+        )
+        catalyst_tags = list(item.catalyst_tags) if item.catalyst_tags else cls._match_signal_tags(
+            text,
+            cls._CATALYST_SIGNAL_KEYWORDS,
+        )
+        sentiment_score = item.sentiment_score
+        sentiment_label = item.sentiment_label
+        if sentiment_score is None or sentiment_label is None:
+            sentiment_score, sentiment_label = cls._score_news_signal(risk_tags, catalyst_tags)
+
+        return SearchResult(
+            title=item.title,
+            snippet=item.snippet,
+            url=item.url,
+            source=item.source,
+            published_date=published_date if published_date is not None else item.published_date,
+            sentiment_score=sentiment_score,
+            sentiment_label=sentiment_label,
+            risk_tags=risk_tags,
+            catalyst_tags=catalyst_tags,
         )
 
     @staticmethod

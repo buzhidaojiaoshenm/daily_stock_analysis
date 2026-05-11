@@ -103,6 +103,10 @@ def _handle_search_stock_news(stock_code: str, stock_name: str) -> dict:
                 "url": r.url,
                 "source": r.source,
                 "published_date": r.published_date,
+                "sentiment_score": r.sentiment_score,
+                "sentiment_label": r.sentiment_label,
+                "risk_tags": r.risk_tags,
+                "catalyst_tags": r.catalyst_tags,
             }
             for r in response.results
         ],
@@ -172,6 +176,10 @@ def _handle_search_comprehensive_intel(stock_code: str, stock_name: str) -> dict
                         "title": r.title,
                         "snippet": r.snippet,
                         "source": r.source,
+                        "sentiment_score": r.sentiment_score,
+                        "sentiment_label": r.sentiment_label,
+                        "risk_tags": r.risk_tags,
+                        "catalyst_tags": r.catalyst_tags,
                     }
                     for r in response.results[:3]  # limit to 3 per dimension to save tokens
                 ],

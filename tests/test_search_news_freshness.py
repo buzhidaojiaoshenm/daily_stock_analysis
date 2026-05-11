@@ -109,6 +109,44 @@ class SearchNewsFreshnessTestCase(unittest.TestCase):
         for item in resp.results:
             self.assertRegex(item.published_date or "", r"^\d{4}-\d{2}-\d{2}$")
 
+    def test_search_stock_news_enriches_sentiment_tags(self) -> None:
+        """Search layer should expose lightweight risk/catalyst signals to downstream agents."""
+        today = datetime.now().date().isoformat()
+        service, _ = self._create_service_with_mock_provider(
+            news_max_age_days=3,
+            news_strategy_profile="short",
+            response=_response(
+                [
+                    SearchResult(
+                        title="贵州茅台股东减持并收到监管处罚",
+                        snippet="公司公告称存在违规事项和处罚风险",
+                        url="https://example.com/risk",
+                        source="example.com",
+                        published_date=today,
+                    ),
+                    SearchResult(
+                        title="贵州茅台业绩预增并宣布股份回购",
+                        snippet="净利润同比增长，新签大额订单",
+                        url="https://example.com/good",
+                        source="example.com",
+                        published_date=today,
+                    ),
+                ]
+            ),
+        )
+
+        resp = service.search_stock_news("600519", "贵州茅台", max_results=5)
+
+        risk_item, catalyst_item = resp.results
+        self.assertEqual(risk_item.sentiment_label, "negative")
+        self.assertLess(risk_item.sentiment_score or 50, 50)
+        self.assertIn("减持", risk_item.risk_tags)
+        self.assertIn("监管处罚", risk_item.risk_tags)
+        self.assertEqual(catalyst_item.sentiment_label, "positive")
+        self.assertGreater(catalyst_item.sentiment_score or 50, 50)
+        self.assertIn("业绩增长", catalyst_item.catalyst_tags)
+        self.assertIn("股份回购", catalyst_item.catalyst_tags)
+
     def test_search_stock_news_overfetch_before_filter(self) -> None:
         """Provider request size should be increased before filtering."""
         service, mock_search = self._create_service_with_mock_provider(

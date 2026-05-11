@@ -25,6 +25,10 @@ def _response(query: str, *, success: bool = True) -> SearchResponse:
                 url="https://example.com/news",
                 source="example.com",
                 published_date="2026-04-24",
+                sentiment_score=30,
+                sentiment_label="negative",
+                risk_tags=["减持"],
+                catalyst_tags=[],
             )
         ] if success else [],
     )
@@ -44,6 +48,9 @@ class SearchToolsPersistenceTest(unittest.TestCase):
             result = _handle_search_stock_news("600519", "贵州茅台")
 
         self.assertTrue(result["success"])
+        self.assertEqual(result["results"][0]["sentiment_label"], "negative")
+        self.assertEqual(result["results"][0]["sentiment_score"], 30)
+        self.assertEqual(result["results"][0]["risk_tags"], ["减持"])
         db.save_news_intel.assert_called_once_with(
             code="600519",
             name="贵州茅台",
@@ -71,6 +78,10 @@ class SearchToolsPersistenceTest(unittest.TestCase):
 
         self.assertEqual(result["report"], "report")
         self.assertEqual(list(result["dimensions"].keys()), ["latest_news"])
+        self.assertEqual(
+            result["dimensions"]["latest_news"]["results"][0]["sentiment_label"],
+            "negative",
+        )
         db.save_news_intel.assert_called_once_with(
             code="600519",
             name="贵州茅台",

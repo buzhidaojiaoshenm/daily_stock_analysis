@@ -317,14 +317,39 @@ class BacktestService:
         )
 
     def get_skill_summary(self, skill_id: str, *, eval_window_days: Optional[int] = None) -> Optional[Dict[str, Any]]:
-        """Return skill-like summary metrics for Agent memory consumers.
+        """Return skill-scoped summary metrics for Agent memory consumers."""
+        normalized_skill_id = str(skill_id or "").strip()
+        if not normalized_skill_id:
+            return None
 
-        The current backtest storage layer only persists overall / per-stock rollups.
-        Re-using the overall rollup here would fabricate skill-specific performance
-        and mislead auto-weighting. Until real skill-tagged summaries exist, return
-        ``None`` so downstream callers fall back to neutral weighting.
-        """
-        return None
+        config = get_config()
+        engine_version = str(getattr(config, "backtest_engine_version", "v1"))
+        rows = self.repo.list_results_with_analysis(
+            code=None,
+            eval_window_days=eval_window_days,
+            engine_version=engine_version,
+        )
+        matched_rows = [
+            result
+            for result, analysis in rows
+            if self._analysis_has_skill_id(analysis, normalized_skill_id)
+        ]
+        if not matched_rows:
+            return None
+
+        summary = self._build_dynamic_summary(
+            rows=matched_rows,
+            scope="skill",
+            code=normalized_skill_id,
+            eval_window_days=int(eval_window_days) if eval_window_days is not None else None,
+            engine_version=engine_version,
+            max_rows=self.MAX_DYNAMIC_SUMMARY_ROWS,
+        )
+        normalized = self._normalize_learning_summary(summary)
+        if normalized is None:
+            return None
+        normalized["skill_id"] = normalized_skill_id
+        return normalized
 
     def get_strategy_summary(self, strategy_id: str, *, eval_window_days: Optional[int] = None) -> Optional[Dict[str, Any]]:
         """Compatibility wrapper for legacy strategy-based callers."""
@@ -542,6 +567,79 @@ class BacktestService:
         if actual_return < 0:
             return "down"
         return "flat"
+
+    @staticmethod
+    def _analysis_has_skill_id(analysis: Any, skill_id: str) -> bool:
+        target = str(skill_id or "").strip()
+        if not target:
+            return False
+
+        candidates: set[str] = set()
+        for field_name in ("context_snapshot", "raw_result"):
+            payload = BacktestService._parse_json_payload(getattr(analysis, field_name, None))
+            candidates.update(BacktestService._extract_skill_identifiers(payload))
+
+        target_lower = target.lower()
+        return any(candidate == target or candidate.lower() == target_lower for candidate in candidates)
+
+    @staticmethod
+    def _parse_json_payload(value: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, (dict, list)):
+            return value
+        try:
+            return json.loads(value)
+        except Exception:
+            return None
+
+    @staticmethod
+    def _extract_skill_identifiers(payload: Any) -> set[str]:
+        identifiers: set[str] = set()
+
+        def add_identifier(value: Any) -> None:
+            if value is None:
+                return
+            text = str(value).strip()
+            if text and len(text) <= 120:
+                identifiers.add(text)
+
+        def walk(value: Any, *, in_skill_container: bool = False) -> None:
+            if isinstance(value, dict):
+                for key, child in value.items():
+                    key_text = str(key)
+                    normalized_key = key_text.lower()
+                    if normalized_key in {"skill_id", "strategy_id", "skill", "strategy"}:
+                        add_identifier(child)
+                    elif in_skill_container and normalized_key in {"id", "slug"}:
+                        add_identifier(child)
+                    elif normalized_key in {
+                        "skills",
+                        "strategies",
+                        "skill_ids",
+                        "strategy_ids",
+                        "requested_skills",
+                        "requested_strategies",
+                        "skills_requested",
+                        "strategies_requested",
+                        "active_skills",
+                        "matched_skills",
+                        "rejected_skills",
+                        "selected_skills",
+                        "enabled_skills",
+                        "strategy_basis",
+                    }:
+                        walk(child, in_skill_container=True)
+                    elif normalized_key in {"dashboard", "meta", "agent_context"}:
+                        walk(child, in_skill_container=in_skill_container)
+            elif isinstance(value, list):
+                for item in value:
+                    walk(item, in_skill_container=in_skill_container)
+            elif in_skill_container:
+                add_identifier(value)
+
+        walk(payload)
+        return identifiers
 
     @staticmethod
     def _build_dynamic_summary(

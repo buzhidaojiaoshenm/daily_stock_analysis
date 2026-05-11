@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [文档] 补充本地验证矩阵，明确后端、Web、桌面端、AI governance 以及离线检查和网络 smoke 的边界。
 - [测试] 为 pytest 的 AnyIO BlockingPortal 增加测试期事件循环 keepalive，避免 FastAPI TestClient 在本地 Python 3.13 环境中卡死。
 - [测试] 修正 `test_env.py` 通知测试对企业微信渠道的判断，避免其他通知渠道已配置时误读空 Webhook。
+- [改进] Agent skill 回测概览改为从带 skill 标签的历史分析记录动态计算，避免无标签数据时返回伪造的策略级指标。
 
 ## [3.14.1] - 2026-04-26
 

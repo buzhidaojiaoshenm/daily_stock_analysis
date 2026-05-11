@@ -82,6 +82,8 @@ class BacktestServiceTestCase(unittest.TestCase):
         trend_prediction: str,
         start_close: float,
         forward_bars: list[StockDaily],
+        context_snapshot: str | None = None,
+        raw_result: str | None = None,
     ) -> None:
         with self.db.get_session() as session:
             session.add(
@@ -94,10 +96,12 @@ class BacktestServiceTestCase(unittest.TestCase):
                     operation_advice=operation_advice,
                     trend_prediction=trend_prediction,
                     analysis_summary="extra-test",
+                    raw_result=raw_result,
                     stop_loss=None,
                     take_profit=None,
                     created_at=created_at,
-                    context_snapshot=f'{{"enhanced_context": {{"date": "{analysis_date.isoformat()}"}}}}',
+                    context_snapshot=context_snapshot
+                    or f'{{"enhanced_context": {{"date": "{analysis_date.isoformat()}"}}}}',
                 )
             )
             session.add(
@@ -238,6 +242,71 @@ class BacktestServiceTestCase(unittest.TestCase):
 
         self.assertIsNone(skill_summary)
         self.assertIsNone(strategy_summary)
+
+    def test_get_skill_summary_filters_real_tagged_backtest_rows(self) -> None:
+        self._seed_analysis(
+            query_id="q2",
+            analysis_date=date(2024, 1, 10),
+            created_at=datetime(2024, 1, 10, 0, 0, 0),
+            operation_advice="买入",
+            trend_prediction="看多",
+            start_close=100.0,
+            forward_bars=[
+                StockDaily(code="600519", date=date(2024, 1, 11), high=101.0, low=95.0, close=96.0),
+            ],
+            context_snapshot=(
+                '{"enhanced_context": {"date": "2024-01-10"}, '
+                '"skills": [{"id": "bull_trend", "name": "Bull Trend"}]}'
+            ),
+        )
+        self._seed_analysis(
+            query_id="q3",
+            analysis_date=date(2024, 1, 20),
+            created_at=datetime(2024, 1, 20, 0, 0, 0),
+            operation_advice="卖出",
+            trend_prediction="看空",
+            start_close=100.0,
+            forward_bars=[
+                StockDaily(code="600519", date=date(2024, 1, 21), high=101.0, low=95.0, close=96.0),
+            ],
+            raw_result=(
+                '{"dashboard": {"strategy_basis": '
+                '{"active_skills": [{"id": "reversal_guard", "name": "Reversal Guard"}]}}}'
+            ),
+        )
+
+        service = BacktestService(self.db)
+        service.run_backtest(code="600519", force=False, eval_window_days=1, min_age_days=0, limit=20)
+
+        skill_summary = service.get_skill_summary("bull_trend", eval_window_days=1)
+        raw_result_skill_summary = service.get_skill_summary("reversal_guard", eval_window_days=1)
+        strategy_summary = service.get_strategy_summary("bull_trend", eval_window_days=1)
+        missing_summary = service.get_skill_summary("missing_skill", eval_window_days=1)
+
+        self.assertIsNotNone(skill_summary)
+        assert skill_summary is not None
+        self.assertEqual(skill_summary["scope"], "skill")
+        self.assertEqual(skill_summary["skill_id"], "bull_trend")
+        self.assertEqual(skill_summary["code"], "bull_trend")
+        self.assertEqual(skill_summary["total_evaluations"], 1)
+        self.assertEqual(skill_summary["completed_count"], 1)
+        self.assertEqual(skill_summary["loss_count"], 1)
+        self.assertAlmostEqual(skill_summary["win_rate"], 0.0)
+        self.assertAlmostEqual(skill_summary["direction_accuracy"], 0.0)
+        self.assertAlmostEqual(skill_summary["avg_return"], -0.04)
+
+        self.assertIsNotNone(raw_result_skill_summary)
+        assert raw_result_skill_summary is not None
+        self.assertEqual(raw_result_skill_summary["skill_id"], "reversal_guard")
+        self.assertEqual(raw_result_skill_summary["total_evaluations"], 1)
+        self.assertEqual(raw_result_skill_summary["win_count"], 1)
+        self.assertAlmostEqual(raw_result_skill_summary["win_rate"], 1.0)
+
+        self.assertIsNotNone(strategy_summary)
+        assert strategy_summary is not None
+        self.assertEqual(strategy_summary["strategy_id"], "bull_trend")
+        self.assertEqual(strategy_summary["skill_id"], "bull_trend")
+        self.assertIsNone(missing_summary)
 
     def test_get_recent_evaluations(self) -> None:
         """Verify get_recent_evaluations returns correct paginated results."""

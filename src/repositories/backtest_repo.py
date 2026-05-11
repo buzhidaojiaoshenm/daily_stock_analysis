@@ -196,6 +196,39 @@ class BacktestRepository:
             rows = session.execute(query).scalars().all()
             return list(rows)
 
+    def list_results_with_analysis(
+        self,
+        *,
+        code: Optional[str],
+        eval_window_days: Optional[int] = None,
+        engine_version: Optional[str] = None,
+        analysis_date_from: Optional[date] = None,
+        analysis_date_to: Optional[date] = None,
+        days: Optional[int] = None,
+        limit: Optional[int] = None,
+    ) -> List[Tuple[BacktestResult, AnalysisHistory]]:
+        """Return backtest result rows together with their source analysis row."""
+        with self.db.get_session() as session:
+            conditions = self._build_result_conditions(
+                code=code,
+                eval_window_days=eval_window_days,
+                engine_version=engine_version,
+                analysis_date_from=analysis_date_from,
+                analysis_date_to=analysis_date_to,
+                days=days,
+            )
+            where_clause = and_(*conditions) if conditions else True
+            query = (
+                select(BacktestResult, AnalysisHistory)
+                .join(AnalysisHistory, AnalysisHistory.id == BacktestResult.analysis_history_id)
+                .where(where_clause)
+                .order_by(desc(BacktestResult.analysis_date), desc(BacktestResult.evaluated_at))
+            )
+            if limit is not None:
+                query = query.limit(limit)
+            rows = session.execute(query).all()
+            return [(result, analysis) for result, analysis in rows]
+
     def upsert_summary(self, summary: BacktestSummary) -> None:
         """Insert or replace summary row by unique key."""
         with self.db.get_session() as session:

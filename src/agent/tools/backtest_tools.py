@@ -3,7 +3,7 @@
 Backtest tools — read-only tools exposing backtest summaries to the agent.
 
 Tools:
-- get_skill_backtest_summary: skill-scoped stats when available, otherwise an explicit unsupported/info response
+- get_skill_backtest_summary: skill-scoped stats from tagged backtest rows, otherwise an explicit info response
 - get_strategy_backtest_summary: legacy alias of the overall summary tool
 - get_stock_backtest_summary: backtest results for a specific stock
 """
@@ -76,7 +76,7 @@ def _handle_get_skill_backtest_summary(skill_id: str = "", eval_window_days: int
             return {
                 "skill_id": skill_id,
                 "supported": False,
-                "info": "Skill-scoped backtest summaries are not available yet.",
+                "info": "Skill-scoped backtest summary is not available for this skill yet.",
             }
         return {
             "scope": "skill",
@@ -102,9 +102,9 @@ def _handle_get_skill_backtest_summary(skill_id: str = "", eval_window_days: int
 get_skill_backtest_summary_tool = ToolDefinition(
     name="get_skill_backtest_summary",
     description=(
-        "Inspect backtest data for a specific skill when skill-scoped stats exist. "
+        "Inspect backtest data for a specific skill when tagged skill-scoped stats exist. "
         "Provide skill_id for a targeted lookup; use get_strategy_backtest_summary for overall metrics. "
-        "When skill-scoped rollups are unavailable, returns an informational response instead of fabricating metrics."
+        "When no matching tagged rows exist, returns an informational response instead of fabricating metrics."
     ),
     parameters=[
         ToolParameter(

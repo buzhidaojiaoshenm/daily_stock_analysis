@@ -18,6 +18,8 @@ logger = logging.getLogger(__name__)
 _APPROX_CHARS_PER_TOKEN = 4
 DEFAULT_HISTORY_TOKEN_BUDGET = 800
 DEFAULT_HISTORY_MESSAGE_TOKEN_BUDGET = 500
+_OMITTED_SUMMARY_MAX_MESSAGES = 4
+_OMITTED_SUMMARY_SNIPPET_CHARS = 96
 
 
 def _estimate_tokens(text: str) -> int:
@@ -29,6 +31,25 @@ def _truncate_to_token_budget(text: str, max_tokens: int) -> tuple[str, bool]:
     if len(text) <= max_chars:
         return text, False
     return text[:max_chars].rstrip() + "\n...(truncated to fit conversation history budget)", True
+
+
+def _summarize_omitted_messages(messages: List[Dict[str, str]]) -> str:
+    if not messages:
+        return ""
+
+    summary_lines = []
+    omitted_head = messages[:_OMITTED_SUMMARY_MAX_MESSAGES]
+    for message in omitted_head:
+        content = " ".join(message["content"].split())
+        if len(content) > _OMITTED_SUMMARY_SNIPPET_CHARS:
+            content = content[:_OMITTED_SUMMARY_SNIPPET_CHARS].rstrip() + "..."
+        summary_lines.append(f"- {message['role']}: {content}")
+
+    remaining = len(messages) - len(omitted_head)
+    if remaining > 0:
+        summary_lines.append(f"- ... {remaining} more earlier messages compressed")
+
+    return "\n".join(summary_lines)
 
 
 def compact_conversation_history(
@@ -55,6 +76,7 @@ def compact_conversation_history(
     used_tokens = 0
     omitted_messages = 0
     omitted_tokens = 0
+    omitted_details_reversed: List[Dict[str, str]] = []
     truncated_messages = 0
 
     for message in reversed(valid_messages):
@@ -66,6 +88,7 @@ def compact_conversation_history(
         if compacted_reversed and used_tokens + tokens > max_tokens:
             omitted_messages += 1
             omitted_tokens += original_tokens
+            omitted_details_reversed.append(message)
             continue
 
         if not compacted_reversed and tokens > max_tokens:
@@ -80,15 +103,22 @@ def compact_conversation_history(
 
     compacted = list(reversed(compacted_reversed))
     if omitted_messages:
+        omitted_summary = _summarize_omitted_messages(list(reversed(omitted_details_reversed)))
+        summary_text = (
+            "\nCompressed earlier messages:\n" + omitted_summary
+            if omitted_summary
+            else ""
+        )
         compacted.insert(
             0,
             {
                 "role": "system",
                 "content": (
-                    "Earlier conversation history was omitted to fit the context budget. "
+                    "Earlier conversation history was compressed to fit the context budget. "
                     f"omitted_messages={omitted_messages}, "
                     f"approx_omitted_tokens={omitted_tokens}, "
                     f"truncated_messages={truncated_messages}."
+                    f"{summary_text}"
                 ),
             },
         )

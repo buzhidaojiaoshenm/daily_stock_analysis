@@ -1123,7 +1123,8 @@ class TestBaseAgentMessageAssembly(unittest.TestCase):
         history_messages = messages[1:-1]
 
         self.assertEqual(history_messages[0]["role"], "system")
-        self.assertIn("Earlier conversation history was omitted", history_messages[0]["content"])
+        self.assertIn("Earlier conversation history was compressed", history_messages[0]["content"])
+        self.assertIn("Compressed earlier messages:", history_messages[0]["content"])
         self.assertIn({"role": "user", "content": "recent question"}, history_messages)
         self.assertIn({"role": "assistant", "content": "recent answer"}, history_messages)
         self.assertNotIn("x" * 4000, [message["content"] for message in history_messages])

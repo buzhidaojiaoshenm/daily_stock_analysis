@@ -141,6 +141,39 @@ class TestAgentExecutor(unittest.TestCase):
         self.assertIn("多头排列必须条件", prompt)
         self.assertIn("多头排列：MA5 > MA10 > MA20", prompt)
 
+    def test_prompt_can_be_driven_by_structured_trading_policy(self):
+        """AgentExecutor should consume one policy object instead of parallel prompt flags."""
+        from src.agent.skills.defaults import TradingPolicyPromptState
+
+        registry = _make_registry_with_echo()
+        adapter = _make_mock_adapter()
+        adapter.call_with_tools.return_value = LLMResponse(
+            content=json.dumps(SAMPLE_DASHBOARD, ensure_ascii=False),
+            tool_calls=[],
+            usage={"total_tokens": 50},
+            provider="openai",
+        )
+
+        policy = TradingPolicyPromptState(
+            skill_instructions="### 技能 1: 价值低估\n- 关注安全边际",
+            default_skill_policy="",
+            technical_skill_policy="",
+            use_legacy_default_prompt=False,
+        )
+        executor = AgentExecutor(
+            registry,
+            adapter,
+            trading_policy=policy,
+            max_steps=2,
+        )
+        result = executor.run("Analyze 600519")
+
+        self.assertTrue(result.success)
+        prompt = adapter.call_with_tools.call_args.args[0][0]["content"]
+        self.assertIn("### 技能 1: 价值低估", prompt)
+        self.assertNotIn("专注于趋势交易", prompt)
+        self.assertNotIn("多头排列：MA5 > MA10 > MA20", prompt)
+
     def test_simple_text_response(self):
         """Agent returns text immediately (no tool calls) with JSON dashboard."""
         registry = _make_registry_with_echo()

@@ -316,6 +316,35 @@ class TestAgentFactorySkillBaseline(unittest.TestCase):
         self.assertFalse(kwargs["use_legacy_default_prompt"])
         skill_manager.activate.assert_called_once_with(["bull_trend"])
 
+    def test_factory_passes_structured_trading_policy_to_executor(self):
+        from src.agent.skills.defaults import TradingPolicyPromptState
+
+        config = SimpleNamespace(
+            agent_arch="single",
+            agent_skills=["chan_theory"],
+            agent_max_steps=10,
+            agent_orchestrator_timeout_s=600,
+        )
+        kwargs, skill_manager = self._run_factory_case(
+            config,
+            request_skills=None,
+            skill_catalog=[
+                self._make_skill("bull_trend", default_active=True, default_priority=10),
+                self._make_skill("chan_theory", default_priority=20),
+            ],
+            instructions="chan_theory instructions",
+        )
+
+        policy = kwargs["trading_policy"]
+        self.assertIsInstance(policy, TradingPolicyPromptState)
+        self.assertEqual(policy.skill_instructions, "chan_theory instructions")
+        self.assertEqual(policy.default_skill_policy, "")
+        self.assertEqual(policy.technical_skill_policy, "")
+        self.assertFalse(policy.use_legacy_default_prompt)
+        self.assertEqual(kwargs["default_skill_policy"], policy.default_skill_policy)
+        self.assertEqual(kwargs["use_legacy_default_prompt"], policy.use_legacy_default_prompt)
+        skill_manager.activate.assert_called_once_with(["chan_theory"])
+
 
 # ============================================================
 # AgentResult to AnalysisResult conversion

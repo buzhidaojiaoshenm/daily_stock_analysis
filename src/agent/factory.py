@@ -30,6 +30,7 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 from src.config import AGENT_MAX_STEPS_DEFAULT
+from src.agent.skills.defaults import TradingPolicyPromptState
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +58,7 @@ class SkillPromptState:
     skill_instructions: str
     default_skill_policy: str
     technical_skill_policy: str
+    trading_policy: TradingPolicyPromptState
 
 
 def _normalize_skill_ids(
@@ -255,19 +257,28 @@ def resolve_skill_prompt_state(config=None, skills: Optional[List[str]] = None) 
 
     skill_manager.activate(skills_to_activate)
     logger.info("[AgentFactory] Activated skills: %s", skills_to_activate)
+    default_skill_policy = get_default_trading_skill_policy(
+        explicit_skill_selection=not use_legacy_default_prompt,
+    )
+    technical_skill_policy = get_default_technical_skill_policy(
+        explicit_skill_selection=not use_legacy_default_prompt,
+    )
+    trading_policy = TradingPolicyPromptState(
+        skill_instructions=skill_manager.get_skill_instructions(),
+        default_skill_policy=default_skill_policy,
+        technical_skill_policy=technical_skill_policy,
+        use_legacy_default_prompt=use_legacy_default_prompt,
+    )
 
     return SkillPromptState(
         skill_manager=skill_manager,
         skills_to_activate=skills_to_activate,
         explicit_skill_selection=explicit_skill_selection,
         use_legacy_default_prompt=use_legacy_default_prompt,
-        skill_instructions=skill_manager.get_skill_instructions(),
-        default_skill_policy=get_default_trading_skill_policy(
-            explicit_skill_selection=not use_legacy_default_prompt,
-        ),
-        technical_skill_policy=get_default_technical_skill_policy(
-            explicit_skill_selection=not use_legacy_default_prompt,
-        ),
+        skill_instructions=trading_policy.skill_instructions,
+        default_skill_policy=trading_policy.default_skill_policy,
+        technical_skill_policy=trading_policy.technical_skill_policy,
+        trading_policy=trading_policy,
     )
 
 
@@ -315,6 +326,7 @@ def build_agent_executor(config=None, skills: Optional[List[str]] = None):
             registry,
             llm_adapter,
             skill_manager,
+            trading_policy=prompt_state.trading_policy,
             technical_skill_policy=prompt_state.technical_skill_policy,
         )
 
@@ -324,13 +336,22 @@ def build_agent_executor(config=None, skills: Optional[List[str]] = None):
         llm_adapter=llm_adapter,
         skill_instructions=prompt_state.skill_instructions,
         default_skill_policy=prompt_state.default_skill_policy,
+        trading_policy=prompt_state.trading_policy,
         use_legacy_default_prompt=prompt_state.use_legacy_default_prompt,
         max_steps=getattr(config, "agent_max_steps", AGENT_MAX_STEPS_DEFAULT),
         timeout_seconds=getattr(config, "agent_orchestrator_timeout_s", 0),
     )
 
 
-def _build_orchestrator(config, registry, llm_adapter, skill_manager, *, technical_skill_policy: str = ""):
+def _build_orchestrator(
+    config,
+    registry,
+    llm_adapter,
+    skill_manager,
+    *,
+    trading_policy: Optional[TradingPolicyPromptState] = None,
+    technical_skill_policy: str = "",
+):
     """Build and return an :class:`AgentOrchestrator` (multi-agent mode).
 
     The orchestrator presents the same ``run()`` / ``chat()`` interface as
@@ -345,6 +366,7 @@ def _build_orchestrator(config, registry, llm_adapter, skill_manager, *, technic
         tool_registry=registry,
         llm_adapter=llm_adapter,
         skill_instructions=skill_manager.get_skill_instructions(),
+        trading_policy=trading_policy,
         technical_skill_policy=technical_skill_policy,
         max_steps=getattr(config, "agent_max_steps", AGENT_MAX_STEPS_DEFAULT),
         mode=mode,

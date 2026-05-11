@@ -21,6 +21,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from src.agent.llm_adapter import LLMToolAdapter
 from src.agent.runner import run_agent_loop, parse_dashboard_json
+from src.agent.skills.defaults import TradingPolicyPromptState
 from src.agent.tools.registry import ToolRegistry
 from src.report_language import normalize_report_language
 from src.market_context import get_market_role, get_market_guidelines
@@ -454,15 +455,21 @@ class AgentExecutor:
         llm_adapter: LLMToolAdapter,
         skill_instructions: str = "",
         default_skill_policy: str = "",
+        trading_policy: Optional[TradingPolicyPromptState] = None,
         use_legacy_default_prompt: bool = False,
         max_steps: int = 10,
         timeout_seconds: Optional[float] = None,
     ):
         self.tool_registry = tool_registry
         self.llm_adapter = llm_adapter
-        self.skill_instructions = skill_instructions
-        self.default_skill_policy = default_skill_policy
-        self.use_legacy_default_prompt = use_legacy_default_prompt
+        self.trading_policy = trading_policy or TradingPolicyPromptState(
+            skill_instructions=skill_instructions,
+            default_skill_policy=default_skill_policy,
+            use_legacy_default_prompt=use_legacy_default_prompt,
+        )
+        self.skill_instructions = self.trading_policy.skill_instructions
+        self.default_skill_policy = self.trading_policy.default_skill_policy
+        self.use_legacy_default_prompt = self.trading_policy.use_legacy_default_prompt
         self.max_steps = max_steps
         self.timeout_seconds = timeout_seconds
 
@@ -477,19 +484,17 @@ class AgentExecutor:
             AgentResult with parsed dashboard or error.
         """
         # Build system prompt with skills
-        skills_section = ""
-        if self.skill_instructions:
-            skills_section = f"## 激活的交易技能\n\n{self.skill_instructions}"
-        default_skill_policy_section = ""
-        if self.default_skill_policy:
-            default_skill_policy_section = f"\n{self.default_skill_policy}\n"
+        skills_section = self.trading_policy.skill_section(heading="## 激活的交易技能")
+        default_skill_policy_section = self.trading_policy.default_policy_section(
+            surrounding_newlines=True,
+        )
         report_language = normalize_report_language((context or {}).get("report_language", "zh"))
         stock_code = (context or {}).get("stock_code", "")
         market_role = get_market_role(stock_code, report_language)
         market_guidelines = get_market_guidelines(stock_code, report_language)
         prompt_template = (
             LEGACY_DEFAULT_AGENT_SYSTEM_PROMPT
-            if self.use_legacy_default_prompt
+            if self.trading_policy.use_legacy_default_prompt
             else AGENT_SYSTEM_PROMPT
         )
         system_prompt = prompt_template.format(
@@ -526,19 +531,17 @@ class AgentExecutor:
         from src.agent.conversation import conversation_manager
 
         # Build system prompt with skills
-        skills_section = ""
-        if self.skill_instructions:
-            skills_section = f"## 激活的交易技能\n\n{self.skill_instructions}"
-        default_skill_policy_section = ""
-        if self.default_skill_policy:
-            default_skill_policy_section = f"\n{self.default_skill_policy}\n"
+        skills_section = self.trading_policy.skill_section(heading="## 激活的交易技能")
+        default_skill_policy_section = self.trading_policy.default_policy_section(
+            surrounding_newlines=True,
+        )
         report_language = normalize_report_language((context or {}).get("report_language", "zh"))
         stock_code = (context or {}).get("stock_code", "")
         market_role = get_market_role(stock_code, report_language)
         market_guidelines = get_market_guidelines(stock_code, report_language)
         prompt_template = (
             LEGACY_DEFAULT_CHAT_SYSTEM_PROMPT
-            if self.use_legacy_default_prompt
+            if self.trading_policy.use_legacy_default_prompt
             else CHAT_SYSTEM_PROMPT
         )
         system_prompt = prompt_template.format(

@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [测试] 为 pytest 的 AnyIO BlockingPortal 增加测试期事件循环 keepalive，避免 FastAPI TestClient 在本地 Python 3.13 环境中卡死。
 - [测试] 修正 `test_env.py` 通知测试对企业微信渠道的判断，避免其他通知渠道已配置时误读空 Webhook。
 - [改进] Agent skill 回测概览改为从带 skill 标签的历史分析记录动态计算，避免无标签数据时返回伪造的策略级指标。
+- [改进] Agent 交易理念提示词改为结构化策略注入状态，统一普通分析、单 Agent 与多 Agent 技术分析的默认基线开关。
 
 ## [3.14.1] - 2026-04-26
 

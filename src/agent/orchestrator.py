@@ -41,6 +41,7 @@ from src.agent.protocols import (
     normalize_decision_signal,
 )
 from src.agent.runner import parse_dashboard_json
+from src.agent.skills.defaults import TradingPolicyPromptState
 from src.agent.tools.registry import ToolRegistry
 from src.config import AGENT_MAX_STEPS_DEFAULT
 from src.report_language import normalize_report_language
@@ -84,6 +85,7 @@ class AgentOrchestrator:
         llm_adapter: LLMToolAdapter,
         skill_instructions: str = "",
         technical_skill_policy: str = "",
+        trading_policy: Optional[TradingPolicyPromptState] = None,
         max_steps: int = AGENT_MAX_STEPS_DEFAULT,
         mode: str = "standard",
         skill_manager=None,
@@ -91,8 +93,12 @@ class AgentOrchestrator:
     ):
         self.tool_registry = tool_registry
         self.llm_adapter = llm_adapter
-        self.skill_instructions = skill_instructions
-        self.technical_skill_policy = technical_skill_policy
+        self.trading_policy = trading_policy or TradingPolicyPromptState(
+            skill_instructions=skill_instructions,
+            technical_skill_policy=technical_skill_policy,
+        )
+        self.skill_instructions = self.trading_policy.skill_instructions
+        self.technical_skill_policy = self.trading_policy.technical_skill_policy
         self.max_steps = max_steps
         normalized_mode = "specialist" if mode in {"strategy", "skill"} else mode
         self.mode = normalized_mode if normalized_mode in VALID_MODES else "standard"

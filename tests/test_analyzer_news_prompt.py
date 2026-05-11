@@ -29,6 +29,27 @@ class AnalyzerNewsPromptTestCase(unittest.TestCase):
         self.assertIn("### 技能 1: 波段低吸", prompt)
         self.assertNotIn("专注于趋势交易", prompt)
 
+    def test_analysis_prompt_consumes_structured_trading_policy_state(self) -> None:
+        from src.agent.skills.defaults import TradingPolicyPromptState
+
+        with patch.object(GeminiAnalyzer, "_init_litellm", return_value=None):
+            analyzer = GeminiAnalyzer()
+
+        fake_state = SimpleNamespace(
+            trading_policy=TradingPolicyPromptState(
+                skill_instructions="### 技能 1: 价值低估\n- 关注安全边际",
+                default_skill_policy="",
+                technical_skill_policy="",
+                use_legacy_default_prompt=False,
+            ),
+        )
+        with patch("src.agent.factory.resolve_skill_prompt_state", return_value=fake_state):
+            prompt = analyzer._get_analysis_system_prompt("zh", stock_code="600519")
+
+        self.assertIn("### 技能 1: 价值低估", prompt)
+        self.assertNotIn("专注于趋势交易", prompt)
+        self.assertNotIn("多头排列：MA5 > MA10 > MA20", prompt)
+
     def test_analysis_prompt_uses_injected_skill_sections_instead_of_hardcoded_trend_baseline(self) -> None:
         with patch.object(GeminiAnalyzer, "_init_litellm", return_value=None):
             analyzer = GeminiAnalyzer(

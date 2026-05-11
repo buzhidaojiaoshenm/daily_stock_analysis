@@ -1053,6 +1053,29 @@ class TestTechnicalAgentSkillPolicy(unittest.TestCase):
         self.assertIn("Bias from MA5 < 2%", prompt)
         self.assertIn("### 技能 1: 默认多头趋势", prompt)
 
+    def test_orchestrator_passes_structured_policy_to_technical_agent(self):
+        from src.agent.orchestrator import AgentOrchestrator
+        from src.agent.skills.defaults import TradingPolicyPromptState
+
+        policy = TradingPolicyPromptState(
+            skill_instructions="### 技能 1: 价值低估\n- 关注安全边际",
+            default_skill_policy="",
+            technical_skill_policy="",
+            use_legacy_default_prompt=False,
+        )
+        orchestrator = AgentOrchestrator(
+            tool_registry=MagicMock(),
+            llm_adapter=MagicMock(),
+            trading_policy=policy,
+            mode="quick",
+        )
+        ctx = AgentContext(query="分析 600519", stock_code="600519")
+        technical = orchestrator._build_agent_chain(ctx)[0]
+
+        prompt = technical.system_prompt(ctx)
+        self.assertIn("### 技能 1: 价值低估", prompt)
+        self.assertNotIn("Bias from MA5 < 2%", prompt)
+
 
 class TestBaseAgentMessageAssembly(unittest.TestCase):
     """Test BaseAgent message assembly helpers."""

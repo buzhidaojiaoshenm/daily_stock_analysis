@@ -22,7 +22,7 @@ from json_repair import repair_json
 from litellm import Router
 
 from src.agent.llm_adapter import get_thinking_extra_body
-from src.agent.skills.defaults import CORE_TRADING_SKILL_POLICY_ZH
+from src.agent.skills.defaults import CORE_TRADING_SKILL_POLICY_ZH, TradingPolicyPromptState
 from src.config import (
     Config,
     extra_litellm_params,
@@ -821,6 +821,7 @@ class GeminiAnalyzer:
         skills: Optional[List[str]] = None,
         skill_instructions: Optional[str] = None,
         default_skill_policy: Optional[str] = None,
+        trading_policy: Optional[TradingPolicyPromptState] = None,
         use_legacy_default_prompt: Optional[bool] = None,
     ):
         """Initialize LLM Analyzer via LiteLLM.
@@ -832,6 +833,7 @@ class GeminiAnalyzer:
         self._requested_skills = list(skills) if skills is not None else None
         self._skill_instructions_override = skill_instructions
         self._default_skill_policy_override = default_skill_policy
+        self._trading_policy_override = trading_policy
         self._use_legacy_default_prompt_override = use_legacy_default_prompt
         self._resolved_prompt_state: Optional[Dict[str, Any]] = None
         self._router = None
@@ -848,7 +850,15 @@ class GeminiAnalyzer:
         """Resolve skill instructions + default baseline + prompt mode."""
         skill_instructions = getattr(self, "_skill_instructions_override", None)
         default_skill_policy = getattr(self, "_default_skill_policy_override", None)
+        trading_policy = getattr(self, "_trading_policy_override", None)
         use_legacy_default_prompt = getattr(self, "_use_legacy_default_prompt_override", None)
+
+        if trading_policy is not None:
+            return (
+                trading_policy.skill_instructions,
+                trading_policy.default_skill_policy,
+                trading_policy.use_legacy_default_prompt,
+            )
 
         if skill_instructions is not None and default_skill_policy is not None:
             return (
@@ -865,6 +875,27 @@ class GeminiAnalyzer:
                 self._get_runtime_config(),
                 skills=getattr(self, "_requested_skills", None),
             )
+            prompt_policy = getattr(prompt_state, "trading_policy", None)
+            if prompt_policy is not None:
+                resolved_state = {
+                    "skill_instructions": prompt_policy.skill_instructions,
+                    "default_skill_policy": prompt_policy.default_skill_policy,
+                    "use_legacy_default_prompt": bool(prompt_policy.use_legacy_default_prompt),
+                }
+                self._resolved_prompt_state = resolved_state
+                return (
+                    skill_instructions
+                    if skill_instructions is not None
+                    else resolved_state.get("skill_instructions", ""),
+                    default_skill_policy
+                    if default_skill_policy is not None
+                    else resolved_state.get("default_skill_policy", ""),
+                    (
+                        use_legacy_default_prompt
+                        if use_legacy_default_prompt is not None
+                        else bool(resolved_state.get("use_legacy_default_prompt", False))
+                    ),
+                )
             resolved_state = {
                 "skill_instructions": prompt_state.skill_instructions,
                 "default_skill_policy": prompt_state.default_skill_policy,

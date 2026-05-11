@@ -11,6 +11,7 @@ This module centralises:
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
@@ -68,6 +69,32 @@ following default risk controls as the shared baseline:
 - Shrink-pullback to MA5 is the preferred entry rhythm
 - Below MA20 -> hold off unless the active skill explicitly proves a better setup
 """
+
+
+@dataclass(frozen=True)
+class TradingPolicyPromptState:
+    """Structured prompt fragments for injectable trading policy behavior."""
+
+    skill_instructions: str = ""
+    default_skill_policy: str = ""
+    technical_skill_policy: str = ""
+    use_legacy_default_prompt: bool = False
+
+    def skill_section(self, *, heading: str) -> str:
+        """Render active skill instructions under the provided heading."""
+        instructions = self.skill_instructions.strip()
+        if not instructions:
+            return ""
+        return f"{heading}\n\n{instructions}"
+
+    def default_policy_section(self, *, surrounding_newlines: bool = False) -> str:
+        """Render the default policy fragment with optional prompt spacing."""
+        policy = self.default_skill_policy.strip()
+        if not policy:
+            return ""
+        if surrounding_newlines:
+            return f"\n{policy}\n"
+        return f"{policy}\n"
 
 
 def get_default_trading_skill_policy(*, explicit_skill_selection: bool) -> str:

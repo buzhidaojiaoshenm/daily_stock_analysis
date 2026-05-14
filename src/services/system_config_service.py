@@ -619,6 +619,27 @@ class SystemConfigService:
                     )
                 )
 
+        runtime_task_queue_keys = submitted_keys & {
+            "ANALYSIS_TASK_QUEUE_LIMIT",
+            "ANALYSIS_TASK_TIMEOUT_SECONDS",
+            "ANALYSIS_TASK_MAX_RETRIES",
+        }
+        if runtime_task_queue_keys:
+            if reload_now:
+                warnings.append(
+                    (
+                        f"{', '.join(sorted(runtime_task_queue_keys))} 已保存。"
+                        "异步任务队列会在下一次提交、查询或状态刷新时使用新的容量、超时和重试配置。"
+                    )
+                )
+            else:
+                warnings.append(
+                    (
+                        f"{', '.join(sorted(runtime_task_queue_keys))} 已写入 .env，"
+                        "但本次未触发运行时重载（reload_now=false）；重载后才会应用。"
+                    )
+                )
+
         startup_only_run_keys = submitted_keys & {
             "RUN_IMMEDIATELY",
         }

@@ -7,6 +7,7 @@ import type {
   AnalyzeAsyncResponse,
   AnalysisReport,
   TaskStatus,
+  TaskCancelResponse,
   TaskListResponse,
 } from '../types/analysis';
 
@@ -125,6 +126,17 @@ export const analysisApi = {
     const data = toCamelCase<TaskListResponse>(response.data);
 
     return data;
+  },
+
+  /**
+   * Cancel a pending or processing async analysis task.
+   */
+  cancelTask: async (taskId: string): Promise<TaskCancelResponse> => {
+    const response = await apiClient.post<Record<string, unknown>>(
+      `/api/v1/analysis/tasks/${taskId}/cancel`
+    );
+
+    return toCamelCase<TaskCancelResponse>(response.data);
   },
 
   /**

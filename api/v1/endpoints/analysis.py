@@ -37,7 +37,9 @@ from api.v1.schemas.analysis import (
     TaskStatus,
     TaskInfo,
     TaskListResponse,
+    TaskCancelResponse,
     DuplicateTaskErrorResponse,
+    QueueCapacityErrorResponse,
 )
 from api.v1.schemas.common import ErrorResponse
 from api.v1.schemas.history import (
@@ -55,6 +57,7 @@ from src.services.stock_code_utils import is_code_like
 from src.services.task_queue import (
     get_task_queue,
     DuplicateTaskError,
+    QueueCapacityError,
     TaskStatus as TaskStatusEnum,
 )
 from src.utils.data_processing import (
@@ -134,6 +137,7 @@ def _resolve_and_normalize_input(raw_value: str) -> str:
         },
         400: {"description": "请求参数错误", "model": ErrorResponse},
         409: {"description": "股票正在分析中，拒绝重复提交", "model": DuplicateTaskErrorResponse},
+        429: {"description": "任务队列已满", "model": QueueCapacityErrorResponse},
         500: {"description": "分析失败", "model": ErrorResponse},
     },
     summary="触发股票分析",
@@ -264,7 +268,17 @@ def _handle_async_analysis_batch(
         notify=notify,
     )
 
-    accepted_tasks, duplicate_errors = task_queue.submit_tasks_batch(**submit_kwargs)
+    try:
+        accepted_tasks, duplicate_errors = task_queue.submit_tasks_batch(**submit_kwargs)
+    except QueueCapacityError as exc:
+        capacity_response = QueueCapacityErrorResponse(
+            error="queue_full",
+            message=str(exc),
+            limit=exc.limit,
+            current=exc.current,
+            requested=exc.requested,
+        )
+        return JSONResponse(status_code=429, content=capacity_response.model_dump())
 
     accepted = [
         BatchTaskAcceptedItem(
@@ -406,9 +420,9 @@ def _handle_sync_analysis(
     description="获取当前所有分析任务，可按状态筛选"
 )
 def get_task_list(
-    status: Optional[str] = Query(
+        status: Optional[str] = Query(
         None,
-        description="筛选状态：pending, processing, completed, failed（支持逗号分隔多个）"
+        description="筛选状态：pending, processing, completed, failed, cancelled, timeout（支持逗号分隔多个）"
     ),
     limit: int = Query(20, description="返回数量限制", ge=1, le=100),
 ) -> TaskListResponse:
@@ -449,6 +463,9 @@ def get_task_list(
             started_at=t.started_at.isoformat() if t.started_at else None,
             completed_at=t.completed_at.isoformat() if t.completed_at else None,
             error=t.error,
+            failure_type=t.failure_type,
+            retry_count=t.retry_count,
+            max_retries=t.max_retries,
             original_query=t.original_query,
             selection_source=t.selection_source,
         )
@@ -460,6 +477,35 @@ def get_task_list(
         pending=stats["pending"],
         processing=stats["processing"],
         tasks=task_infos,
+    )
+
+
+@router.post(
+    "/tasks/{task_id}/cancel",
+    response_model=TaskCancelResponse,
+    responses={
+        200: {"description": "任务已取消", "model": TaskCancelResponse},
+        404: {"description": "任务不存在或已结束", "model": ErrorResponse},
+    },
+    summary="取消分析任务",
+    description="协作式取消 pending/processing 分析任务；已完成、失败、已取消或超时任务不会被重复取消。"
+)
+def cancel_analysis_task(task_id: str) -> TaskCancelResponse:
+    task_queue = get_task_queue()
+    cancelled = task_queue.cancel_task(task_id, reason="任务已取消")
+    if not cancelled:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error": "not_found",
+                "message": f"任务 {task_id} 不存在、已结束或无法取消",
+            },
+        )
+
+    return TaskCancelResponse(
+        task_id=cancelled.task_id,
+        status=cancelled.status.value,
+        message=cancelled.message or "任务已取消",
     )
 
 
@@ -486,6 +532,9 @@ async def task_stream():
     - task_progress: 任务阶段进度更新
     - task_completed: 任务完成
     - task_failed: 任务失败
+    - task_retrying: 任务失败后进入重试
+    - task_cancelled: 任务取消
+    - task_timeout: 任务超时
     - heartbeat: 心跳（每 30 秒）
     
     Returns:
@@ -588,6 +637,9 @@ def get_analysis_status(task_id: str) -> TaskStatus:
             progress=task.progress,
             result=None,  # In-progress tasks do not carry a result payload.
             error=task.error,
+            failure_type=task.failure_type,
+            retry_count=task.retry_count,
+            max_retries=task.max_retries,
             stock_name=task.stock_name,
             original_query=task.original_query,
             selection_source=task.selection_source,

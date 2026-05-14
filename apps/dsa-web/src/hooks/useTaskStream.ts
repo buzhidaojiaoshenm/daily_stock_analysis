@@ -12,6 +12,9 @@ export type SSEEventType =
   | 'task_progress'
   | 'task_completed'
   | 'task_failed'
+  | 'task_retrying'
+  | 'task_cancelled'
+  | 'task_timeout'
   | 'heartbeat';
 
 /**
@@ -37,6 +40,12 @@ export interface UseTaskStreamOptions {
   onTaskProgress?: (task: TaskInfo) => void;
   /** Task failed callback */
   onTaskFailed?: (task: TaskInfo) => void;
+  /** Task retrying callback */
+  onTaskRetrying?: (task: TaskInfo) => void;
+  /** Task cancelled callback */
+  onTaskCancelled?: (task: TaskInfo) => void;
+  /** Task timeout callback */
+  onTaskTimeout?: (task: TaskInfo) => void;
   /** Connected callback */
   onConnected?: () => void;
   /** Connection error callback */
@@ -71,6 +80,9 @@ export function useTaskStream(options: UseTaskStreamOptions = {}): UseTaskStream
     onTaskCompleted,
     onTaskProgress,
     onTaskFailed,
+    onTaskRetrying,
+    onTaskCancelled,
+    onTaskTimeout,
     onConnected,
     onError,
     autoReconnect = true,
@@ -90,6 +102,9 @@ export function useTaskStream(options: UseTaskStreamOptions = {}): UseTaskStream
     onTaskCompleted,
     onTaskProgress,
     onTaskFailed,
+    onTaskRetrying,
+    onTaskCancelled,
+    onTaskTimeout,
     onConnected,
     onError,
   });
@@ -102,6 +117,9 @@ export function useTaskStream(options: UseTaskStreamOptions = {}): UseTaskStream
       onTaskCompleted,
       onTaskProgress,
       onTaskFailed,
+      onTaskRetrying,
+      onTaskCancelled,
+      onTaskTimeout,
       onConnected,
       onError,
     };
@@ -121,6 +139,9 @@ export function useTaskStream(options: UseTaskStreamOptions = {}): UseTaskStream
       startedAt: data.started_at as string | undefined,
       completedAt: data.completed_at as string | undefined,
       error: data.error as string | undefined,
+      failureType: data.failure_type as TaskInfo['failureType'],
+      retryCount: (data.retry_count as number | undefined) ?? 0,
+      maxRetries: (data.max_retries as number | undefined) ?? 0,
       originalQuery: data.original_query as string | undefined,
       selectionSource: data.selection_source as string | undefined,
     };
@@ -180,6 +201,21 @@ export function useTaskStream(options: UseTaskStreamOptions = {}): UseTaskStream
     eventSource.addEventListener('task_failed', (e) => {
       const task = parseEventData(e.data);
       if (task) callbacksRef.current.onTaskFailed?.(task);
+    });
+
+    eventSource.addEventListener('task_retrying', (e) => {
+      const task = parseEventData(e.data);
+      if (task) callbacksRef.current.onTaskRetrying?.(task);
+    });
+
+    eventSource.addEventListener('task_cancelled', (e) => {
+      const task = parseEventData(e.data);
+      if (task) callbacksRef.current.onTaskCancelled?.(task);
+    });
+
+    eventSource.addEventListener('task_timeout', (e) => {
+      const task = parseEventData(e.data);
+      if (task) callbacksRef.current.onTaskTimeout?.(task);
     });
 
     // Heartbeat event used to keep the connection alive.

@@ -141,13 +141,33 @@ export type AnalyzeAsyncResponse = TaskAccepted | BatchTaskAcceptedResponse;
 
 export type AnalyzeResponse = AnalysisResult | AnalyzeAsyncResponse;
 
+export type TaskStatusValue =
+  | 'pending'
+  | 'processing'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+  | 'timeout';
+
+export type TaskFailureType =
+  | 'validation'
+  | 'data_source'
+  | 'llm'
+  | 'notification'
+  | 'timeout'
+  | 'internal'
+  | 'cancelled';
+
 /** Task status */
 export interface TaskStatus {
   taskId: string;
-  status: 'pending' | 'processing' | 'completed' | 'failed';
+  status: TaskStatusValue;
   progress?: number;
   result?: AnalysisResult;
   error?: string;
+  failureType?: TaskFailureType;
+  retryCount?: number;
+  maxRetries?: number;
   stockName?: string;
   originalQuery?: string;
   selectionSource?: string;
@@ -158,7 +178,7 @@ export interface TaskInfo {
   taskId: string;
   stockCode: string;
   stockName?: string;
-  status: 'pending' | 'processing' | 'completed' | 'failed';
+  status: TaskStatusValue;
   progress: number;
   message?: string;
   reportType: string;
@@ -166,8 +186,17 @@ export interface TaskInfo {
   startedAt?: string;
   completedAt?: string;
   error?: string;
+  failureType?: TaskFailureType;
+  retryCount?: number;
+  maxRetries?: number;
   originalQuery?: string;
   selectionSource?: string;
+}
+
+export interface TaskCancelResponse {
+  taskId: string;
+  status: TaskStatusValue;
+  message: string;
 }
 
 /** Task list response */

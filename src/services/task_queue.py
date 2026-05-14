@@ -49,6 +49,19 @@ class TaskStatus(str, Enum):
     PROCESSING = "processing"  # In progress
     COMPLETED = "completed"    # Completed
     FAILED = "failed"          # Failed
+    CANCELLED = "cancelled"    # Cancelled before completion
+    TIMEOUT = "timeout"        # Timed out before completion
+
+
+class TaskFailureType(str, Enum):
+    """Machine-readable terminal reason for non-completed tasks."""
+    VALIDATION = "validation"
+    DATA_SOURCE = "data_source"
+    LLM = "llm"
+    NOTIFICATION = "notification"
+    TIMEOUT = "timeout"
+    INTERNAL = "internal"
+    CANCELLED = "cancelled"
 
 
 @dataclass
@@ -66,7 +79,10 @@ class TaskInfo:
     message: Optional[str] = None
     result: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
+    failure_type: Optional[str] = None
     report_type: str = "detailed"
+    retry_count: int = 0
+    max_retries: int = 0
     created_at: datetime = field(default_factory=datetime.now)
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
@@ -87,6 +103,9 @@ class TaskInfo:
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
             "error": self.error,
+            "failure_type": self.failure_type,
+            "retry_count": self.retry_count,
+            "max_retries": self.max_retries,
             "original_query": self.original_query,
             "selection_source": self.selection_source,
         }
@@ -102,7 +121,10 @@ class TaskInfo:
             message=self.message,
             result=self.result,
             error=self.error,
+            failure_type=self.failure_type,
             report_type=self.report_type,
+            retry_count=self.retry_count,
+            max_retries=self.max_retries,
             created_at=self.created_at,
             started_at=self.started_at,
             completed_at=self.completed_at,
@@ -121,6 +143,18 @@ class DuplicateTaskError(Exception):
         self.stock_code = stock_code
         self.existing_task_id = existing_task_id
         super().__init__(f"股票 {stock_code} 正在分析中 (task_id: {existing_task_id})")
+
+
+class QueueCapacityError(Exception):
+    """Raised when accepting a new task would exceed the configured queue limit."""
+
+    def __init__(self, limit: int, current: int, requested: int):
+        self.limit = limit
+        self.current = current
+        self.requested = requested
+        super().__init__(
+            f"分析任务队列已满: limit={limit}, current={current}, requested={requested}"
+        )
 
 
 class AnalysisTaskQueue:
@@ -146,9 +180,22 @@ class AnalysisTaskQueue:
                     cls._instance = super().__new__(cls)
         return cls._instance
     
-    def __init__(self, max_workers: int = 3, persist_tasks: bool = False):
+    def __init__(
+        self,
+        max_workers: int = 3,
+        persist_tasks: bool = False,
+        *,
+        task_timeout_seconds: int = 0,
+        queue_limit: int = 0,
+        default_max_retries: int = 0,
+    ):
         # 防止重复初始化
         if hasattr(self, '_initialized') and self._initialized:
+            self.sync_runtime_limits(
+                task_timeout_seconds=task_timeout_seconds,
+                queue_limit=queue_limit,
+                default_max_retries=default_max_retries,
+            )
             if persist_tasks:
                 self.enable_persistence()
             return
@@ -174,6 +221,9 @@ class AnalysisTaskQueue:
         # 任务历史保留数量（内存中）
         self._max_history = 100
         self._persist_tasks = False
+        self._task_timeout_seconds = max(0, int(task_timeout_seconds or 0))
+        self._queue_limit = max(0, int(queue_limit or 0))
+        self._default_max_retries = max(0, int(default_max_retries or 0))
         
         self._initialized = True
         if persist_tasks:
@@ -252,6 +302,22 @@ class AnalysisTaskQueue:
             logger.info("[TaskQueue] 最大并发已更新: %s -> %s", previous, target)
         return "applied"
 
+    def sync_runtime_limits(
+        self,
+        *,
+        task_timeout_seconds: Optional[int] = None,
+        queue_limit: Optional[int] = None,
+        default_max_retries: Optional[int] = None,
+    ) -> None:
+        """Update runtime task-queue limits without replacing the singleton."""
+        with self._data_lock:
+            if task_timeout_seconds is not None:
+                self._task_timeout_seconds = max(0, int(task_timeout_seconds or 0))
+            if queue_limit is not None:
+                self._queue_limit = max(0, int(queue_limit or 0))
+            if default_max_retries is not None:
+                self._default_max_retries = max(0, int(default_max_retries or 0))
+
     def enable_persistence(self) -> None:
         """Enable durable DB-backed task snapshots for API/runtime queues."""
         with self._data_lock:
@@ -299,7 +365,10 @@ class AnalysisTaskQueue:
                 "message": task.message,
                 "result": task.result,
                 "error": task.error,
+                "failure_type": task.failure_type,
                 "report_type": task.report_type,
+                "retry_count": task.retry_count,
+                "max_retries": task.max_retries,
                 "created_at": task.created_at,
                 "started_at": task.started_at,
                 "completed_at": task.completed_at,
@@ -338,7 +407,10 @@ class AnalysisTaskQueue:
             message=getattr(row, "message", None),
             result=result,
             error=getattr(row, "error", None),
+            failure_type=getattr(row, "failure_type", None),
             report_type=getattr(row, "report_type", None) or "detailed",
+            retry_count=int(getattr(row, "retry_count", 0) or 0),
+            max_retries=int(getattr(row, "max_retries", 0) or 0),
             created_at=getattr(row, "created_at", None) or datetime.now(),
             started_at=getattr(row, "started_at", None),
             completed_at=getattr(row, "completed_at", None),
@@ -400,6 +472,8 @@ class AnalysisTaskQueue:
         selection_source: Optional[str] = None,
         report_type: str = "detailed",
         force_refresh: bool = False,
+        notify: bool = True,
+        max_retries: Optional[int] = None,
     ) -> TaskInfo:
         """
         Submit a single analysis task.
@@ -429,6 +503,8 @@ class AnalysisTaskQueue:
             selection_source=selection_source,
             report_type=report_type,
             force_refresh=force_refresh,
+            notify=notify,
+            max_retries=max_retries,
         )
         if duplicates:
             raise duplicates[0]
@@ -443,6 +519,7 @@ class AnalysisTaskQueue:
         report_type: str = "detailed",
         force_refresh: bool = False,
         notify: bool = True,
+        max_retries: Optional[int] = None,
     ) -> Tuple[List[TaskInfo], List[DuplicateTaskError]]:
         """
         Submit analysis tasks in batch.
@@ -460,8 +537,16 @@ class AnalysisTaskQueue:
             normalized for normalized in (canonical_stock_code(code) for code in stock_codes)
             if normalized
         ]
+        task_max_retries = (
+            max(0, int(max_retries))
+            if max_retries is not None
+            else self._default_max_retries
+        )
+        self.mark_timed_out_tasks()
 
         with self._data_lock:
+            self._raise_if_batch_exceeds_capacity_locked(canonical_codes)
+
             for stock_code in canonical_codes:
                 dedupe_key = _dedupe_stock_code_key(stock_code)
                 if dedupe_key in self._analyzing_stocks:
@@ -477,6 +562,7 @@ class AnalysisTaskQueue:
                     status=TaskStatus.PENDING,
                     message="任务已加入队列",
                     report_type=report_type,
+                    max_retries=task_max_retries,
                     original_query=original_query,
                     selection_source=selection_source,
                 )
@@ -511,6 +597,30 @@ class AnalysisTaskQueue:
 
         return accepted, duplicates
 
+    def _active_task_count_locked(self) -> int:
+        return sum(
+            1
+            for task in self._tasks.values()
+            if task.status in (TaskStatus.PENDING, TaskStatus.PROCESSING)
+        )
+
+    def _raise_if_batch_exceeds_capacity_locked(self, canonical_codes: List[str]) -> None:
+        if self._queue_limit <= 0:
+            return
+
+        requested = 0
+        seen: set[str] = set()
+        for stock_code in canonical_codes:
+            dedupe_key = _dedupe_stock_code_key(stock_code)
+            if dedupe_key in seen or dedupe_key in self._analyzing_stocks:
+                continue
+            seen.add(dedupe_key)
+            requested += 1
+
+        current = self._active_task_count_locked()
+        if requested and current + requested > self._queue_limit:
+            raise QueueCapacityError(self._queue_limit, current, requested)
+
     def _rollback_submitted_tasks_locked(self, task_ids: List[str]) -> None:
         """回滚当前批次已创建但尚未稳定返回给调用方的任务。"""
         for task_id in task_ids:
@@ -534,6 +644,7 @@ class AnalysisTaskQueue:
         Returns:
             TaskInfo 或 None
         """
+        self.mark_timed_out_tasks()
         with self._data_lock:
             task = self._tasks.get(task_id)
             if task:
@@ -556,6 +667,7 @@ class AnalysisTaskQueue:
         Returns:
             任务列表（副本）
         """
+        self.mark_timed_out_tasks()
         with self._data_lock:
             memory_tasks = [
                 task.copy() for task in self._tasks.values()
@@ -584,6 +696,7 @@ class AnalysisTaskQueue:
         Returns:
             任务列表（副本）
         """
+        self.mark_timed_out_tasks()
         with self._data_lock:
             memory_tasks = sorted(
                 self._tasks.values(),
@@ -607,6 +720,7 @@ class AnalysisTaskQueue:
         Returns:
             统计信息字典
         """
+        self.mark_timed_out_tasks()
         with self._data_lock:
             if self._persist_tasks:
                 try:
@@ -620,6 +734,8 @@ class AnalysisTaskQueue:
                 "processing": 0,
                 "completed": 0,
                 "failed": 0,
+                "cancelled": 0,
+                "timeout": 0,
             }
             for task in self._tasks.values():
                 stats[task.status.value] = stats.get(task.status.value, 0) + 1
@@ -661,6 +777,87 @@ class AnalysisTaskQueue:
         self._persist_task_snapshot(task_snapshot)
         self._broadcast_event(event_type, task_snapshot.to_dict())
         return task_snapshot
+
+    def cancel_task(self, task_id: str, reason: Optional[str] = None) -> Optional[TaskInfo]:
+        """Cooperatively cancel a pending or processing task."""
+        message = reason or "任务已取消"
+        with self._data_lock:
+            task = self._tasks.get(task_id)
+            if not task or task.status not in (TaskStatus.PENDING, TaskStatus.PROCESSING):
+                return None
+            future = self._futures.get(task_id)
+            if future is not None:
+                future.cancel()
+            self._mark_task_terminal_locked(
+                task,
+                status=TaskStatus.CANCELLED,
+                message=message,
+                error=message,
+                failure_type=TaskFailureType.CANCELLED.value,
+            )
+            task_snapshot = task.copy()
+
+        self._persist_task_snapshot(task_snapshot)
+        self._broadcast_event("task_cancelled", task_snapshot.to_dict())
+        return task_snapshot
+
+    def mark_timed_out_tasks(self) -> int:
+        """Mark stale pending/processing tasks as timed out."""
+        with self._data_lock:
+            snapshots = self._mark_timed_out_tasks_locked()
+
+        for snapshot in snapshots:
+            self._persist_task_snapshot(snapshot)
+            self._broadcast_event("task_timeout", snapshot.to_dict())
+        return len(snapshots)
+
+    def _mark_timed_out_tasks_locked(self) -> List[TaskInfo]:
+        if self._task_timeout_seconds <= 0:
+            return []
+
+        now = datetime.now()
+        snapshots: List[TaskInfo] = []
+        for task in self._tasks.values():
+            if task.status not in (TaskStatus.PENDING, TaskStatus.PROCESSING):
+                continue
+            reference = task.started_at or task.created_at
+            if (now - reference).total_seconds() < self._task_timeout_seconds:
+                continue
+            self._mark_task_terminal_locked(
+                task,
+                status=TaskStatus.TIMEOUT,
+                message=f"任务超过 {self._task_timeout_seconds} 秒未完成，已标记为超时",
+                error=f"任务超过 {self._task_timeout_seconds} 秒未完成",
+                failure_type=TaskFailureType.TIMEOUT.value,
+            )
+            future = self._futures.get(task.task_id)
+            if future is not None:
+                future.cancel()
+            snapshots.append(task.copy())
+        return snapshots
+
+    def _mark_task_terminal_locked(
+        self,
+        task: TaskInfo,
+        *,
+        status: TaskStatus,
+        message: str,
+        error: Optional[str] = None,
+        failure_type: Optional[str] = None,
+        result: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        task.status = status
+        task.completed_at = datetime.now()
+        task.message = message
+        task.error = error
+        task.failure_type = failure_type
+        if result is not None:
+            task.result = result
+        if status == TaskStatus.COMPLETED:
+            task.progress = 100
+        dedupe_key = _dedupe_stock_code_key(task.stock_code)
+        if self._analyzing_stocks.get(dedupe_key) == task.task_id:
+            del self._analyzing_stocks[dedupe_key]
     
     # ========== 任务执行 ==========
     
@@ -687,7 +884,12 @@ class AnalysisTaskQueue:
         # 更新状态为处理中
         with self._data_lock:
             task = self._tasks.get(task_id)
-            if not task:
+            if not task or task.status in (
+                TaskStatus.CANCELLED,
+                TaskStatus.TIMEOUT,
+                TaskStatus.COMPLETED,
+                TaskStatus.FAILED,
+            ):
                 return None
             task.status = TaskStatus.PROCESSING
             task.started_at = datetime.now()
@@ -721,18 +923,17 @@ class AnalysisTaskQueue:
                 # 更新任务状态为完成
                 with self._data_lock:
                     task = self._tasks.get(task_id)
-                    if task:
-                        task.status = TaskStatus.COMPLETED
-                        task.progress = 100
-                        task.completed_at = datetime.now()
+                    if task and task.status == TaskStatus.PROCESSING:
                         task.result = result
                         task.message = "分析完成"
                         task.stock_name = result.get("stock_name", task.stock_name)
-                        
-                        # 从分析中集合移除
-                        dedupe_key = _dedupe_stock_code_key(task.stock_code)
-                        if dedupe_key in self._analyzing_stocks:
-                            del self._analyzing_stocks[dedupe_key]
+                        task.failure_type = None
+                        self._mark_task_terminal_locked(
+                            task,
+                            status=TaskStatus.COMPLETED,
+                            message="分析完成",
+                            result=result,
+                        )
                         task_snapshot = task.copy()
                     else:
                         task_snapshot = None
@@ -752,32 +953,84 @@ class AnalysisTaskQueue:
                 
         except Exception as e:
             error_msg = str(e)
+            failure_type = self._classify_failure(e, error_msg)
             logger.error(f"[TaskQueue] 任务失败: {task_id} ({stock_code}), 错误: {error_msg}")
             
             with self._data_lock:
                 task = self._tasks.get(task_id)
-                if task:
-                    task.status = TaskStatus.FAILED
-                    task.completed_at = datetime.now()
+                if task and task.status == TaskStatus.PROCESSING:
                     task.error = error_msg[:200]  # 限制错误信息长度
-                    task.message = f"分析失败: {error_msg[:50]}"
-                    
-                    # 从分析中集合移除
-                    dedupe_key = _dedupe_stock_code_key(task.stock_code)
-                    if dedupe_key in self._analyzing_stocks:
-                        del self._analyzing_stocks[dedupe_key]
-                    task_snapshot = task.copy()
+                    task.failure_type = failure_type
+                    if task.retry_count < task.max_retries:
+                        task.retry_count += 1
+                        task.status = TaskStatus.PENDING
+                        task.progress = 0
+                        task.message = (
+                            f"分析失败，准备重试 ({task.retry_count}/{task.max_retries}): "
+                            f"{error_msg[:50]}"
+                        )
+                        task_snapshot = task.copy()
+                        try:
+                            future = self.executor.submit(
+                                self._execute_task,
+                                task_id,
+                                stock_code,
+                                report_type,
+                                force_refresh,
+                                notify,
+                            )
+                            self._futures[task_id] = future
+                        except Exception as submit_exc:
+                            retry_error = f"重试提交失败: {submit_exc}"
+                            self._mark_task_terminal_locked(
+                                task,
+                                status=TaskStatus.FAILED,
+                                message=retry_error[:80],
+                                error=retry_error[:200],
+                                failure_type=TaskFailureType.INTERNAL.value,
+                            )
+                            task_snapshot = task.copy()
+                    else:
+                        self._mark_task_terminal_locked(
+                            task,
+                            status=TaskStatus.FAILED,
+                            message=f"分析失败: {error_msg[:50]}",
+                            error=error_msg[:200],
+                            failure_type=failure_type,
+                        )
+                        task_snapshot = task.copy()
                 else:
                     task_snapshot = None
             
             self._persist_task_snapshot(task_snapshot)
             if task_snapshot:
-                self._broadcast_event("task_failed", task_snapshot.to_dict())
+                event_type = (
+                    "task_retrying"
+                    if task_snapshot.status == TaskStatus.PENDING
+                    else "task_failed"
+                )
+                self._broadcast_event(event_type, task_snapshot.to_dict())
             
             # 清理过期任务
             self._cleanup_old_tasks()
             
             return None
+
+    @staticmethod
+    def _classify_failure(exc: Exception, message: str) -> str:
+        """Map an exception/message to a stable task failure category."""
+        text = f"{exc.__class__.__name__} {message}".lower()
+        if "timeout" in text or "timed out" in text or "超时" in text:
+            return TaskFailureType.TIMEOUT.value
+        if "llm" in text or "model" in text or "json" in text or "provider" in text:
+            return TaskFailureType.LLM.value
+        if "validation" in text or "invalid" in text or "校验" in text or "参数" in text:
+            return TaskFailureType.VALIDATION.value
+        if "notification" in text or "webhook" in text or "telegram" in text or "wechat" in text:
+            return TaskFailureType.NOTIFICATION.value
+        if "data source" in text or "数据源" in text or "quote" in text or "行情" in text:
+            return TaskFailureType.DATA_SOURCE.value
+        return TaskFailureType.INTERNAL.value
     
     def _cleanup_old_tasks(self) -> int:
         """
@@ -907,6 +1160,11 @@ def get_task_queue() -> AnalysisTaskQueue:
         config = get_config()
         target_workers = max(1, int(getattr(config, "max_workers", queue.max_workers)))
         queue.sync_max_workers(target_workers, log=False)
+        queue.sync_runtime_limits(
+            task_timeout_seconds=getattr(config, "analysis_task_timeout_seconds", 0),
+            queue_limit=getattr(config, "analysis_task_queue_limit", 100),
+            default_max_retries=getattr(config, "analysis_task_max_retries", 0),
+        )
     except Exception as exc:
         logger.debug("[TaskQueue] 读取 MAX_WORKERS 失败，使用当前并发设置: %s", exc)
 

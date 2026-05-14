@@ -829,6 +829,9 @@ class Config:
     
     # === 系统配置 ===
     max_workers: int = 3  # 低并发防封禁
+    analysis_task_timeout_seconds: int = 0  # 0 disables async task timeout guard
+    analysis_task_queue_limit: int = 100  # Max pending/processing async analysis tasks
+    analysis_task_max_retries: int = 0  # Additional retries for async analysis tasks
     debug: bool = False
     http_proxy: Optional[str] = None  # HTTP 代理 (例如: http://127.0.0.1:10809)
     https_proxy: Optional[str] = None # HTTPS 代理
@@ -1505,6 +1508,24 @@ class Config:
             log_dir=os.getenv('LOG_DIR', './logs'),
             log_level=os.getenv('LOG_LEVEL', 'INFO'),
             max_workers=parse_env_int(os.getenv('MAX_WORKERS'), 3, field_name='MAX_WORKERS', minimum=1),
+            analysis_task_timeout_seconds=parse_env_int(
+                os.getenv('ANALYSIS_TASK_TIMEOUT_SECONDS'),
+                0,
+                field_name='ANALYSIS_TASK_TIMEOUT_SECONDS',
+                minimum=0,
+            ),
+            analysis_task_queue_limit=parse_env_int(
+                os.getenv('ANALYSIS_TASK_QUEUE_LIMIT'),
+                100,
+                field_name='ANALYSIS_TASK_QUEUE_LIMIT',
+                minimum=0,
+            ),
+            analysis_task_max_retries=parse_env_int(
+                os.getenv('ANALYSIS_TASK_MAX_RETRIES'),
+                0,
+                field_name='ANALYSIS_TASK_MAX_RETRIES',
+                minimum=0,
+            ),
             debug=os.getenv('DEBUG', 'false').lower() == 'true',
             config_validate_mode=os.getenv('CONFIG_VALIDATE_MODE', 'warn').lower(),
             http_proxy=os.getenv('HTTP_PROXY') or os.getenv('http_proxy'),

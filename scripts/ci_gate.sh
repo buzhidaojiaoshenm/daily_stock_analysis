@@ -51,6 +51,11 @@ deterministic_checks() {
   ./test.sh yfinance
 }
 
+api_contract_check() {
+  echo "==> backend-gate: API contract drift check"
+  python scripts/api_contract.py --check
+}
+
 offline_test_suite() {
   echo "==> backend-gate: offline test suite"
   require_python_module pytest
@@ -59,6 +64,7 @@ offline_test_suite() {
 
 run_all() {
   syntax_check
+  api_contract_check
   flake8_checks
   deterministic_checks
   offline_test_suite
@@ -74,6 +80,9 @@ case "$phase" in
   syntax)
     syntax_check
     ;;
+  api-contract)
+    api_contract_check
+    ;;
   flake8)
     flake8_checks
     ;;
@@ -84,7 +93,7 @@ case "$phase" in
     offline_test_suite
     ;;
   *)
-    echo "Usage: $0 [all|syntax|flake8|deterministic|offline-tests]" >&2
+    echo "Usage: $0 [all|syntax|api-contract|flake8|deterministic|offline-tests]" >&2
     exit 2
     ;;
 esac

@@ -23,6 +23,19 @@ class TaskStatusEnum(str, Enum):
     PROCESSING = "processing"
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELLED = "cancelled"
+    TIMEOUT = "timeout"
+
+
+class TaskFailureTypeEnum(str, Enum):
+    """任务失败/终止类型枚举"""
+    VALIDATION = "validation"
+    DATA_SOURCE = "data_source"
+    LLM = "llm"
+    NOTIFICATION = "notification"
+    TIMEOUT = "timeout"
+    INTERNAL = "internal"
+    CANCELLED = "cancelled"
 
 
 class AnalyzeRequest(BaseModel):
@@ -211,7 +224,7 @@ class TaskStatus(BaseModel):
     status: str = Field(
         ..., 
         description="任务状态",
-        pattern="^(pending|processing|completed|failed)$"
+        pattern="^(pending|processing|completed|failed|cancelled|timeout)$"
     )
     progress: Optional[int] = Field(
         None, 
@@ -227,6 +240,12 @@ class TaskStatus(BaseModel):
         None, 
         description="错误信息（仅在 failed 时存在）"
     )
+    failure_type: Optional[TaskFailureTypeEnum] = Field(
+        None,
+        description="失败或终止类型：validation/data_source/llm/notification/timeout/internal/cancelled",
+    )
+    retry_count: int = Field(0, description="已经执行的重试次数", ge=0)
+    max_retries: int = Field(0, description="该任务允许的最大重试次数", ge=0)
     stock_name: Optional[str] = Field(None, description="股票名称")
     original_query: Optional[str] = Field(None, description="用户原始输入")
     selection_source: Optional[str] = Field(
@@ -243,6 +262,9 @@ class TaskStatus(BaseModel):
                 "progress": 100,
                 "result": None,
                 "error": None,
+                "failure_type": None,
+                "retry_count": 0,
+                "max_retries": 0,
                 "stock_name": "贵州茅台",
                 "original_query": "茅台",
                 "selection_source": "autocomplete"
@@ -268,6 +290,12 @@ class TaskInfo(BaseModel):
     started_at: Optional[str] = Field(None, description="开始执行时间")
     completed_at: Optional[str] = Field(None, description="完成时间")
     error: Optional[str] = Field(None, description="错误信息（仅在 failed 时存在）")
+    failure_type: Optional[TaskFailureTypeEnum] = Field(
+        None,
+        description="失败或终止类型",
+    )
+    retry_count: int = Field(0, description="已经执行的重试次数", ge=0)
+    max_retries: int = Field(0, description="该任务允许的最大重试次数", ge=0)
     original_query: Optional[str] = Field(None, description="用户原始输入")
     selection_source: Optional[str] = Field(
         None,
@@ -289,6 +317,9 @@ class TaskInfo(BaseModel):
                 "started_at": "2026-02-05T10:30:01",
                 "completed_at": None,
                 "error": None,
+                "failure_type": None,
+                "retry_count": 0,
+                "max_retries": 0,
                 "original_query": "茅台",
                 "selection_source": "autocomplete"
             }
@@ -312,6 +343,33 @@ class TaskListResponse(BaseModel):
                 "tasks": []
             }
         }
+
+
+class TaskCancelResponse(BaseModel):
+    """取消任务响应模型"""
+
+    task_id: str = Field(..., description="任务 ID")
+    status: TaskStatusEnum = Field(..., description="取消后的任务状态")
+    message: str = Field(..., description="提示信息")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "task_id": "abc123def456",
+                "status": "cancelled",
+                "message": "任务已取消",
+            }
+        }
+
+
+class QueueCapacityErrorResponse(BaseModel):
+    """任务队列容量错误响应模型"""
+
+    error: str = Field("queue_full", description="错误类型")
+    message: str = Field(..., description="错误信息")
+    limit: int = Field(..., description="队列容量上限")
+    current: int = Field(..., description="当前进行中任务数")
+    requested: int = Field(..., description="本次请求新增任务数")
 
 
 class DuplicateTaskErrorResponse(BaseModel):

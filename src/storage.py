@@ -290,7 +290,10 @@ class AnalysisTask(Base):
     message = Column(Text)
     result_json = Column(Text)
     error = Column(Text)
+    failure_type = Column(String(32))
     report_type = Column(String(16), nullable=False, default="detailed")
+    retry_count = Column(Integer, nullable=False, default=0)
+    max_retries = Column(Integer, nullable=False, default=0)
     original_query = Column(String(255))
     selection_source = Column(String(32))
     created_at = Column(DateTime, default=datetime.now, index=True)
@@ -722,12 +725,35 @@ class DatabaseManager:
         
         # 创建所有表
         Base.metadata.create_all(self._engine)
+        self._ensure_analysis_task_schema()
 
         self._initialized = True
         logger.info(f"数据库初始化完成: {db_url}")
 
         # 注册退出钩子，确保程序退出时关闭数据库连接
         atexit.register(DatabaseManager._cleanup_engine, self._engine)
+
+    def _ensure_analysis_task_schema(self) -> None:
+        """Add durable-task columns needed by newer queue versions on SQLite."""
+        if not self._is_sqlite_engine:
+            return
+
+        expected_columns = {
+            "failure_type": "VARCHAR(32)",
+            "retry_count": "INTEGER NOT NULL DEFAULT 0",
+            "max_retries": "INTEGER NOT NULL DEFAULT 0",
+        }
+        try:
+            with self._engine.begin() as conn:
+                rows = conn.exec_driver_sql("PRAGMA table_info(analysis_tasks)").fetchall()
+                existing = {row[1] for row in rows}
+                for column, ddl_type in expected_columns.items():
+                    if column not in existing:
+                        conn.exec_driver_sql(
+                            f"ALTER TABLE analysis_tasks ADD COLUMN {column} {ddl_type}"
+                        )
+        except Exception as exc:
+            logger.warning("检查或升级 analysis_tasks 表结构失败: %s", exc)
     
     @classmethod
     def get_instance(cls) -> 'DatabaseManager':
@@ -1444,7 +1470,10 @@ class DatabaseManager:
             "message": task.get("message"),
             "result_json": self._safe_json_dumps(task.get("result")) if task.get("result") is not None else None,
             "error": task.get("error"),
+            "failure_type": task.get("failure_type"),
             "report_type": task.get("report_type") or "detailed",
+            "retry_count": int(task.get("retry_count") or 0),
+            "max_retries": int(task.get("max_retries") or 0),
             "original_query": task.get("original_query"),
             "selection_source": task.get("selection_source"),
             "created_at": task.get("created_at") or now,
@@ -1509,6 +1538,8 @@ class DatabaseManager:
             "processing": 0,
             "completed": 0,
             "failed": 0,
+            "cancelled": 0,
+            "timeout": 0,
         }
 
         with self.get_session() as session:
@@ -1548,6 +1579,7 @@ class DatabaseManager:
                 row.updated_at = completed_at
                 row.error = terminal_message
                 row.message = terminal_message
+                row.failure_type = "internal"
             return len(rows)
 
         return self._run_write_transaction(

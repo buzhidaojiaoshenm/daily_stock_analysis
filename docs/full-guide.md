@@ -332,6 +332,9 @@ daily_stock_analysis/
 | `ADMIN_AUTH_ENABLED` | Web 登录：设为 `true` 启用密码保护；首次访问在网页设置初始密码，可在「系统设置 > 修改密码」修改；忘记密码执行 `python -m src.auth reset_password` | `false` |
 | `TRUST_X_FORWARDED_FOR` | 单层可信反向代理部署时设为 `true`，取 `X-Forwarded-For` 最右值作为真实客户端 IP（用于登录限流等）；直连公网时保持 `false` 防伪造。多级代理/CDN 场景下限流 key 可能退化为边缘代理 IP，需额外评估 | `false` |
 | `MAX_WORKERS` | 并发线程数 | `3` |
+| `ANALYSIS_TASK_QUEUE_LIMIT` | 异步分析任务容量上限，按 `pending` + `processing` 计数；`0` 表示不限制 | `100` |
+| `ANALYSIS_TASK_TIMEOUT_SECONDS` | 异步分析任务超时秒数；超过后任务状态标记为 `timeout`，`0` 表示不自动标记 | `0` |
+| `ANALYSIS_TASK_MAX_RETRIES` | 异步分析任务失败后的额外重试次数；重试过程会保留 `retry_count` 与失败分类 | `0` |
 | `MARKET_REVIEW_ENABLED` | 启用大盘复盘 | `true` |
 | `MARKET_REVIEW_REGION` | 大盘复盘市场区域：cn(A股)、us(美股)、both(两者)，us 适合仅关注美股的用户 | `cn` |
 | `TRADING_DAY_CHECK_ENABLED` | 交易日检查：默认 `true`，非交易日跳过执行；设为 `false` 或使用 `--force-run` 可强制执行（Issue #373） | `true` |
@@ -1071,9 +1074,9 @@ FastAPI 提供 RESTful API 服务，支持配置管理和触发分析。
 
 > 说明：`POST /api/v1/analysis/analyze` 在 `async_mode=false` 时仅支持单只股票；批量 `stock_codes` 需使用 `async_mode=true`。异步 `202` 响应对单股返回 `task_id`，对批量返回 `accepted` / `duplicates` 汇总结构。
 
-> 任务状态持久化说明：异步分析任务会写入数据库状态快照，`/api/v1/analysis/tasks` 和 `/api/v1/analysis/status/{task_id}` 优先使用当前内存队列，队列内不存在时可回查最近的持久化任务。服务进程重启后，上一进程遗留的 `pending` / `processing` 任务会保留在任务列表中并标记为 `failed`，错误信息提示重新提交；已完成报告仍以分析历史记录为准。
+> 任务状态持久化说明：异步分析任务会写入数据库状态快照，`/api/v1/analysis/tasks` 和 `/api/v1/analysis/status/{task_id}` 优先使用当前内存队列，队列内不存在时可回查最近的持久化任务。服务进程重启后，上一进程遗留的 `pending` / `processing` 任务会保留在任务列表中并标记为 `failed`，错误信息提示重新提交；已完成报告仍以分析历史记录为准。任务状态包含 `pending`、`processing`、`completed`、`failed`、`cancelled`、`timeout`，失败或终止时会尽量返回 `failure_type`（`validation` / `data_source` / `llm` / `notification` / `timeout` / `internal` / `cancelled`）以及 `retry_count` / `max_retries`。
 
-> 进度流说明：`GET /api/v1/analysis/tasks/stream` 除 `task_created / task_started / task_completed / task_failed` 外，新增 `task_progress` 事件。普通分析链路会在“行情准备 / 新闻检索 / 上下文整理 / LLM 生成 / 报告保存”等阶段持续更新 `progress` 与 `message`。LiteLLM 流式返回仅在服务端累积完整文本，最终 JSON 解析成功后才会持久化历史报告；若流式在首个 chunk 前不可用，会自动回退到原非流式调用；若已产生部分 chunk 后失败，系统先尝试同模型非流式重试，失败后再按既有主模型->备用模型顺序继续尝试。  
+> 进度流说明：`GET /api/v1/analysis/tasks/stream` 除 `task_created / task_started / task_completed / task_failed` 外，新增 `task_progress`、`task_retrying`、`task_cancelled`、`task_timeout` 事件。普通分析链路会在“行情准备 / 新闻检索 / 上下文整理 / LLM 生成 / 报告保存”等阶段持续更新 `progress` 与 `message`。LiteLLM 流式返回仅在服务端累积完整文本，最终 JSON 解析成功后才会持久化历史报告；若流式在首个 chunk 前不可用，会自动回退到原非流式调用；若已产生部分 chunk 后失败，系统先尝试同模型非流式重试，失败后再按既有主模型->备用模型顺序继续尝试。
 > 如果任务进度回调异常，主链路不会中断，系统会提升告警为 warning 级别并在服务端日志中输出完整异常，便于排查 SSE 推送断点。
 >  
 > 说明：该特性属于运行时 SSE 与回退链路细节，优先记录于完整指南（`full-guide*.md`），不在 `README.md` 中展开详细行为分支。

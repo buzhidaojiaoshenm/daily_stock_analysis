@@ -20,6 +20,8 @@ from api.v1.schemas.analysis import (
     TaskAccepted,
     BatchTaskAcceptedResponse,
     TaskStatus,
+    TaskCancelResponse,
+    QueueCapacityErrorResponse,
 )
 from api.v1.schemas.history import (
     HistoryItem,
@@ -108,6 +110,8 @@ __all__ = [
     "TaskAccepted",
     "BatchTaskAcceptedResponse",
     "TaskStatus",
+    "TaskCancelResponse",
+    "QueueCapacityErrorResponse",
     # history
     "HistoryItem",
     "HistoryListResponse",
